@@ -6,33 +6,33 @@
 
 @layer base {
   :root {
-    --background: 30 25% 97%;
-    --foreground: 25 30% 12%;
+    --background: 140 15% 97%;
+    --foreground: 150 25% 10%;
 
-    --card: 30 20% 95%;
-    --card-foreground: 25 30% 12%;
+    --card: 140 12% 94%;
+    --card-foreground: 150 25% 10%;
 
-    --popover: 30 25% 97%;
-    --popover-foreground: 25 30% 12%;
+    --popover: 140 15% 97%;
+    --popover-foreground: 150 25% 10%;
 
-    --primary: 25 45% 35%;
-    --primary-foreground: 30 25% 97%;
+    --primary: 152 45% 28%;
+    --primary-foreground: 140 15% 97%;
 
-    --secondary: 30 18% 90%;
-    --secondary-foreground: 25 30% 18%;
+    --secondary: 145 14% 90%;
+    --secondary-foreground: 150 25% 15%;
 
-    --muted: 30 12% 92%;
-    --muted-foreground: 25 10% 48%;
+    --muted: 140 10% 91%;
+    --muted-foreground: 150 8% 45%;
 
-    --accent: 35 55% 52%;
-    --accent-foreground: 30 25% 97%;
+    --accent: 160 40% 42%;
+    --accent-foreground: 140 15% 97%;
 
     --destructive: 0 65% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 30 15% 87%;
-    --input: 30 15% 87%;
-    --ring: 25 45% 35%;
+    --border: 145 12% 86%;
+    --input: 145 12% 86%;
+    --ring: 152 45% 28%;
 
     --radius: 0.75rem;
 
@@ -46,10 +46,10 @@
     --sidebar-ring: 25 45% 35%;
 
     /* Custom tokens */
-    --tree-line: 25 25% 75%;
-    --node-hover: 30 30% 92%;
-    --glass: 30 20% 98% / 0.7;
-    --glass-border: 30 15% 87% / 0.5;
+    --tree-line: 150 18% 72%;
+    --node-hover: 140 20% 92%;
+    --glass: 140 15% 98% / 0.7;
+    --glass-border: 145 12% 86% / 0.5;
 
     --font-display: 'DM Serif Display', Georgia, serif;
     --font-body: 'Inter', system-ui, sans-serif;
