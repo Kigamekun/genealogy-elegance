@@ -1,5 +1,5 @@
 import { FamilyMember } from "@/lib/family-data";
-import { User, Heart, Calendar, ChevronDown, ChevronRight, UserPlus } from "lucide-react";
+import { Heart, Calendar, ChevronDown, ChevronRight, UserPlus } from "lucide-react";
 
 interface MemberCardProps {
   member: FamilyMember;
@@ -7,118 +7,80 @@ interface MemberCardProps {
   hasChildren: boolean;
   isExpanded: boolean;
   onToggle: () => void;
-  onClick: () => void;
+  onClick: (m: FamilyMember) => void;
   onAddChild: () => void;
 }
 
-export function MemberCard({
-  member,
-  spouse,
-  hasChildren,
-  isExpanded,
-  onToggle,
-  onClick,
-  onAddChild,
-}: MemberCardProps) {
-  const isDeceased = !!member.deathDate;
+function Avatar({ member }: { member: FamilyMember }) {
+  if (member.avatarUrl) {
+    return (
+      <img
+        src={member.avatarUrl}
+        alt={member.name}
+        className="w-10 h-10 rounded-full object-cover shrink-0 ring-2 ring-border"
+      />
+    );
+  }
+  return (
+    <div
+      className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${
+        member.gender === "male" ? "bg-primary/15 text-primary" : "bg-accent/15 text-accent"
+      }`}
+    >
+      {member.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+    </div>
+  );
+}
 
+function MiniCard({ member, onClick }: { member: FamilyMember; onClick: () => void }) {
+  const isDeceased = !!member.deathDate;
+  return (
+    <button
+      onClick={onClick}
+      className="glass-card rounded-lg p-3 w-44 text-left transition-all duration-300 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+    >
+      <div className="flex items-center gap-2.5 mb-1.5">
+        <Avatar member={member} />
+        <div className="min-w-0">
+          <p className="font-semibold text-xs truncate text-foreground leading-tight">{member.name}</p>
+          <p className="text-[10px] text-muted-foreground">{member.relation}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+        <Calendar className="w-2.5 h-2.5" />
+        <span>{new Date(member.birthDate).getFullYear()}</span>
+        {isDeceased && <><span>–</span><span>{new Date(member.deathDate!).getFullYear()}</span></>}
+      </div>
+    </button>
+  );
+}
+
+export function MemberCard({ member, spouse, hasChildren, isExpanded, onToggle, onClick, onAddChild }: MemberCardProps) {
   return (
     <div className="flex flex-col items-center">
-      {/* Couple container */}
-      <div className="flex items-center gap-3">
-        {/* Main member */}
-        <button
-          onClick={onClick}
-          className="glass-card rounded-lg p-4 w-48 text-left transition-all duration-300 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] cursor-pointer group"
-        >
-          <div className="flex items-center gap-3 mb-2">
-            <div
-              className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${
-                member.gender === "male"
-                  ? "bg-primary/15 text-primary"
-                  : "bg-accent/15 text-accent"
-              }`}
-            >
-              {member.name
-                .split(" ")
-                .map((n) => n[0])
-                .join("")
-                .slice(0, 2)}
-            </div>
-            <div className="min-w-0">
-              <p className="font-semibold text-sm truncate text-foreground leading-tight">
-                {member.name}
-              </p>
-              <p className="text-xs text-muted-foreground">{member.relation}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Calendar className="w-3 h-3" />
-            <span>{new Date(member.birthDate).getFullYear()}</span>
-            {isDeceased && (
-              <>
-                <span>–</span>
-                <span>{new Date(member.deathDate!).getFullYear()}</span>
-              </>
-            )}
-          </div>
-        </button>
-
-        {/* Spouse */}
+      <div className="flex items-center gap-2">
+        <MiniCard member={member} onClick={() => onClick(member)} />
         {spouse && (
           <>
-            <Heart className="w-4 h-4 text-accent shrink-0" />
-            <button
-              onClick={onClick}
-              className="glass-card rounded-lg p-4 w-48 text-left transition-all duration-300 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-            >
-              <div className="flex items-center gap-3 mb-2">
-                <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${
-                    spouse.gender === "male"
-                      ? "bg-primary/15 text-primary"
-                      : "bg-accent/15 text-accent"
-                  }`}
-                >
-                  {spouse.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .slice(0, 2)}
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-sm truncate text-foreground leading-tight">
-                    {spouse.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{spouse.relation}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Calendar className="w-3 h-3" />
-                <span>{new Date(spouse.birthDate).getFullYear()}</span>
-              </div>
-            </button>
+            <Heart className="w-3.5 h-3.5 text-accent shrink-0" />
+            <MiniCard member={spouse} onClick={() => onClick(spouse)} />
           </>
         )}
       </div>
-
-      {/* Controls */}
-      <div className="flex items-center gap-1 mt-2">
+      <div className="flex items-center gap-1 mt-1.5">
         {hasChildren && (
           <button
             onClick={onToggle}
-            className="p-1.5 rounded-full bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground transition-colors duration-200 active:scale-95"
-            aria-label={isExpanded ? "Tutup" : "Buka"}
+            className="p-1 rounded-full bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground transition-colors duration-200 active:scale-95"
           >
-            {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           </button>
         )}
         <button
           onClick={onAddChild}
-          className="p-1.5 rounded-full bg-secondary text-secondary-foreground hover:bg-accent hover:text-accent-foreground transition-colors duration-200 active:scale-95"
-          aria-label="Tambah anak"
+          className="p-1 rounded-full bg-secondary text-secondary-foreground hover:bg-accent hover:text-accent-foreground transition-colors duration-200 active:scale-95"
         >
-          <UserPlus className="w-3.5 h-3.5" />
+          <UserPlus className="w-3 h-3" />
         </button>
       </div>
     </div>
