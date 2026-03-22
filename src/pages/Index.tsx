@@ -298,24 +298,24 @@ const Index = () => {
               <Download className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Export JSON</span>
             </Button>
-            <Button size="sm" variant="outline" onClick={() => startAddMember({ asFamilyHead: true, relationHint: "head" })} className="gap-1.5">
+            {/* <Button size="sm" variant="outline" onClick={() => startAddMember({ asFamilyHead: true, relationHint: "head" })} className="gap-1.5">
               <TreePine className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Kepala Baru</span>
             </Button>
             <Button size="sm" onClick={() => startAddMember({ relationHint: "member" })} className="gap-1.5">
               <Plus className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Tambah Anggota</span>
-            </Button>
+            </Button> */}
           </div>
         </div>
       </header>
 
       <section className="mx-auto w-full max-w-[1200px] px-4 pt-6 pb-5 text-center animate-reveal-up sm:px-6 sm:pt-8 sm:pb-6">
         <h2 className="font-display text-3xl sm:text-4xl text-foreground leading-tight mb-3 mx-auto" style={{ lineHeight: "1.15" }}>
-          Jelajahi Akar Keluarga Anda
+          Jelajahi Akar Keluarga Ahmad Safari
         </h2>
         <p className="text-muted-foreground text-sm leading-relaxed max-w-md mx-auto">
-          Aksi utama dipindahkan ke kanvas: tambah pasangan, sambung relasi, dan atur kepala keluarga langsung dari kartu.
+          Tambahkan keluarga anda untuk melengkapi silsilah ini.
         </p>
       </section>
 

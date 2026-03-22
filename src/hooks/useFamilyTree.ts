@@ -157,6 +157,15 @@ function applyFamilyRules(members: FamilyMember[]): FamilyMember[] {
   return syncMemberRelations(Array.from(reconciledMap.values()));
 }
 
+function reconcileMembersSafely(nextMembers: FamilyMember[], fallbackMembers: FamilyMember[]): FamilyMember[] {
+  try {
+    return applyFamilyRules(syncMemberRelations(nextMembers));
+  } catch (error) {
+    console.error("Safari Family failed to reconcile members and kept the last stable snapshot.", error);
+    return fallbackMembers;
+  }
+}
+
 export function useFamilyTree() {
   const [members, setMembers] = useState<FamilyMember[]>(loadMembersFromStorage);
   const [searchQuery, setSearchQuery] = useState("");
@@ -303,7 +312,7 @@ export function useFamilyTree() {
       : Date.now().toString();
     const nextMember = normalizeMemberRelations({ ...member, id });
 
-    setMembers((prev) => applyFamilyRules([...prev, nextMember]));
+    setMembers((prev) => reconcileMembersSafely([...prev, nextMember], prev));
     setExpandedNodes((prev) => {
       const next = new Set(prev);
       for (const parentId of getParentIds(nextMember)) next.add(parentId);
@@ -339,7 +348,7 @@ export function useFamilyTree() {
         });
       });
 
-      return applyFamilyRules(nextMembers);
+      return reconcileMembersSafely(nextMembers, prev);
     });
     setEditingMember(null);
   }, []);
@@ -360,7 +369,7 @@ export function useFamilyTree() {
           });
         });
 
-      return applyFamilyRules(nextMembers);
+      return reconcileMembersSafely(nextMembers, prev);
     });
     setExpandedNodes((prev) => {
       const next = new Set(prev);
@@ -390,7 +399,7 @@ export function useFamilyTree() {
         });
       });
 
-      return applyFamilyRules(nextMembers);
+      return reconcileMembersSafely(nextMembers, prev);
     });
 
     setExpandedNodes((prev) => {
@@ -442,7 +451,7 @@ export function useFamilyTree() {
         return member;
       });
 
-      return applyFamilyRules(nextMembers);
+      return reconcileMembersSafely(nextMembers, prev);
     });
   }, []);
 
@@ -457,7 +466,7 @@ export function useFamilyTree() {
         });
       });
 
-      return applyFamilyRules(nextMembers);
+      return reconcileMembersSafely(nextMembers, prev);
     });
   }, []);
 
@@ -493,7 +502,7 @@ export function useFamilyTree() {
   }, []);
 
   const replaceMembers = useCallback((nextMembers: FamilyMember[]) => {
-    const reconciledMembers = applyFamilyRules(syncMemberRelations(nextMembers));
+    const reconciledMembers = reconcileMembersSafely(nextMembers, members);
     setMembers(reconciledMembers);
     setSelectedMember(null);
     setEditingMember(null);
@@ -507,7 +516,7 @@ export function useFamilyTree() {
       });
       return next;
     });
-  }, []);
+  }, [members]);
 
   return {
     members,

@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { act } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FamilyCanvasGraph } from "@/components/FamilyCanvasGraph";
 import { FamilyMember, syncMemberRelations } from "@/lib/family-data";
 
@@ -250,5 +250,26 @@ describe("FamilyCanvasGraph layout", () => {
       );
       expect(stepConnector).not.toBeUndefined();
     });
+  });
+
+  it("falls back to a safe layout instead of blanking the canvas when the main layout crashes", () => {
+    const parseSpy = vi.spyOn(Date, "parse").mockImplementation(() => {
+      throw new Error("forced layout failure");
+    });
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      withGraph([
+        member({ id: "ayah", name: "Ayah", gender: "male", birthDate: "1970-01-01", generation: 1 }),
+        member({ id: "anak", name: "Anak", gender: "male", birthDate: "2000-01-01", generation: 2, parentIds: ["ayah"] }),
+      ], () => {
+        expect(document.body.textContent).toContain("Tampilan sementara disederhanakan");
+        expect(document.body.textContent).toContain("Ayah");
+        expect(document.body.textContent).toContain("Anak");
+      });
+    } finally {
+      parseSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
+    }
   });
 });

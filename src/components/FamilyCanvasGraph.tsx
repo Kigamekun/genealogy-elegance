@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef, useState } from "react";
-import { Calendar, Crown, Heart, Pencil, Trash2, UserPlus, UsersRound, X } from "lucide-react";
+import { AlertTriangle, Calendar, Crown, Heart, Pencil, Trash2, UserPlus, UsersRound, X } from "lucide-react";
 import { FamilyMember, getParentIds, getSpouseIds, getSpouseRelationStatus, getSpouses, getStepParentIds } from "@/lib/family-data";
 import { formatFamilyDate, getMemberAge, isMemberDeceased } from "@/lib/member-life";
 import { cn } from "@/lib/utils";
@@ -88,6 +88,16 @@ interface ParentGroup {
 interface ConnectorGeometry {
   paths: string[];
   joints: Point[];
+}
+
+interface GraphLayout {
+  positions: Map<string, NodePosition>;
+  unitByMember: Map<string, string>;
+  width: number;
+  height: number;
+  spouseConnectors: SpouseConnector[];
+  parentGroups: ParentGroup[];
+  fallbackNotice?: string;
 }
 
 const CARD_WIDTH = 260;
@@ -335,6 +345,55 @@ function buildHighlightedChildPaths(group: ParentGroup, target: ChildTarget): st
   ];
 }
 
+function compareMembersForFallback(left: FamilyMember, right: FamilyMember): number {
+  if (left.generation !== right.generation) return left.generation - right.generation;
+  if (left.birthDate !== right.birthDate) return left.birthDate.localeCompare(right.birthDate);
+  return left.name.localeCompare(right.name) || left.id.localeCompare(right.id);
+}
+
+function buildFallbackGraphLayout(members: FamilyMember[]): GraphLayout {
+  const positions = new Map<string, NodePosition>();
+  const unitByMember = new Map<string, string>();
+  const generationLevels = Array.from(new Set(members.map((member) => member.generation))).sort((a, b) => a - b);
+  const membersByGeneration = generationLevels.map((generation) =>
+    members
+      .filter((member) => member.generation === generation)
+      .sort(compareMembersForFallback),
+  );
+  const rowWidths = membersByGeneration.map((rowMembers) =>
+    rowMembers.length > 0
+      ? rowMembers.length * CARD_WIDTH + Math.max(0, rowMembers.length - 1) * UNIT_GAP
+      : CARD_WIDTH,
+  );
+  const widestRow = rowWidths.length > 0 ? Math.max(...rowWidths) : CARD_WIDTH;
+  const width = Math.max(CARD_WIDTH + PADDING_X * 2, widestRow + PADDING_X * 2);
+  const height = generationLevels.length > 0
+    ? generationLevels.length * CARD_HEIGHT + Math.max(0, generationLevels.length - 1) * V_GAP + PADDING_Y * 2
+    : CARD_HEIGHT + PADDING_Y * 2;
+
+  membersByGeneration.forEach((rowMembers, rowIndex) => {
+    const rowWidth = rowWidths[rowIndex] ?? CARD_WIDTH;
+    const startX = PADDING_X + Math.max(0, (widestRow - rowWidth) / 2);
+    const y = PADDING_Y + rowIndex * (CARD_HEIGHT + V_GAP);
+
+    rowMembers.forEach((member, memberIndex) => {
+      const x = startX + memberIndex * (CARD_WIDTH + UNIT_GAP);
+      positions.set(member.id, { x, y });
+      unitByMember.set(member.id, `fallback-g${member.generation}-${memberIndex}`);
+    });
+  });
+
+  return {
+    positions,
+    unitByMember,
+    width,
+    height,
+    spouseConnectors: [],
+    parentGroups: [],
+    fallbackNotice: "Tampilan sementara disederhanakan agar data keluarga tetap terbuka dengan aman.",
+  };
+}
+
 function getAnchors(position: NodePosition): Record<"top" | "bottom" | "left" | "right", Point> {
   return {
     top: { x: position.x + CARD_WIDTH / 2, y: position.y - 1 },
@@ -399,54 +458,55 @@ function FamilyCanvasGraphComponent({
     [members],
   );
 
-  const layout = useMemo(() => {
-    const generationLevels = Array.from(new Set(members.map((member) => member.generation))).sort((a, b) => a - b);
+  const layout = useMemo<GraphLayout>(() => {
+    try {
+      const generationLevels = Array.from(new Set(members.map((member) => member.generation))).sort((a, b) => a - b);
 
-    const getMemberCenterFromPositions = (lookup: Map<string, NodePosition>, memberId: string): number | null => {
-      const position = lookup.get(memberId);
-      return position ? position.x + CARD_WIDTH / 2 : null;
-    };
+      const getMemberCenterFromPositions = (lookup: Map<string, NodePosition>, memberId: string): number | null => {
+        const position = lookup.get(memberId);
+        return position ? position.x + CARD_WIDTH / 2 : null;
+      };
 
-    const resolveFamilySourceCenter = (parentIds: string[] | undefined, lookup: Map<string, NodePosition>): number | undefined => {
-      if (!parentIds || parentIds.length === 0) return undefined;
+      const resolveFamilySourceCenter = (parentIds: string[] | undefined, lookup: Map<string, NodePosition>): number | undefined => {
+        if (!parentIds || parentIds.length === 0) return undefined;
 
-      const fatherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "male");
-      const motherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "female");
-      const father = fatherId ? memberMap.get(fatherId) : undefined;
-      const motherCenter = motherId ? getMemberCenterFromPositions(lookup, motherId) : null;
+        const fatherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "male");
+        const motherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "female");
+        const father = fatherId ? memberMap.get(fatherId) : undefined;
+        const motherCenter = motherId ? getMemberCenterFromPositions(lookup, motherId) : null;
 
-      if (father && motherCenter !== null && getSpouseIds(father).length > 1) {
-        return motherCenter;
-      }
+        if (father && motherCenter !== null && getSpouseIds(father).length > 1) {
+          return motherCenter;
+        }
 
-      const centers = parentIds
-        .map((parentId) => getMemberCenterFromPositions(lookup, parentId))
-        .filter((value): value is number => value !== null);
+        const centers = parentIds
+          .map((parentId) => getMemberCenterFromPositions(lookup, parentId))
+          .filter((value): value is number => value !== null);
 
-      if (centers.length === 0) return undefined;
-      if (centers.length === 1) return centers[0];
-      return average(centers);
-    };
+        if (centers.length === 0) return undefined;
+        if (centers.length === 1) return centers[0];
+        return average(centers);
+      };
 
-    const shouldUseMotherAnchor = (parentIds: string[] | undefined): boolean => {
-      if (!parentIds || parentIds.length < 2) return false;
+      const shouldUseMotherAnchor = (parentIds: string[] | undefined): boolean => {
+        if (!parentIds || parentIds.length < 2) return false;
 
-      const fatherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "male");
-      const motherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "female");
-      if (!fatherId || !motherId) return false;
+        const fatherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "male");
+        const motherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "female");
+        if (!fatherId || !motherId) return false;
 
-      const father = memberMap.get(fatherId);
-      return Boolean(father && getSpouseIds(father).length > 1);
-    };
+        const father = memberMap.get(fatherId);
+        return Boolean(father && getSpouseIds(father).length > 1);
+      };
 
-    const getMemberWeight = (member: FamilyMember) => {
-      const parentBirth = getParentIds(member)
-        .map((parentId) => memberMap.get(parentId))
-        .filter((parent): parent is FamilyMember => Boolean(parent))
-        .map((parent) => timestamp(parent.birthDate));
-      if (parentBirth.length > 0) return average(parentBirth);
-      return timestamp(member.birthDate);
-    };
+      const getMemberWeight = (member: FamilyMember) => {
+        const parentBirth = getParentIds(member)
+          .map((parentId) => memberMap.get(parentId))
+          .filter((parent): parent is FamilyMember => Boolean(parent))
+          .map((parent) => timestamp(parent.birthDate));
+        if (parentBirth.length > 0) return average(parentBirth);
+        return timestamp(member.birthDate);
+      };
 
     const rowDrafts: UnitDraft[][] = generationLevels.map((generation) => {
       const membersInGeneration = members
@@ -969,6 +1029,10 @@ function FamilyCanvasGraphComponent({
         spouseConnectors,
         parentGroups,
       };
+    } catch (error) {
+      console.error("Safari Family graph layout failed and switched to the safe fallback layout.", error);
+      return buildFallbackGraphLayout(members);
+    }
   }, [memberMap, members]);
 
   const sourceMember = connectState ? memberMap.get(connectState.sourceId) : undefined;
@@ -1018,6 +1082,17 @@ function FamilyCanvasGraphComponent({
       onPointerMove={handleCanvasMove}
       onPointerLeave={() => setCursor(null)}
     >
+      {layout.fallbackNotice && (
+        <div className="pointer-events-none absolute left-4 top-4 z-20 max-w-sm rounded-2xl border border-amber-300/70 bg-amber-50/95 px-3 py-2 text-left shadow-sm backdrop-blur">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <p className="text-[11px] leading-relaxed text-amber-900">
+              {layout.fallbackNotice}
+            </p>
+          </div>
+        </div>
+      )}
+
       <svg className="absolute inset-0 h-full w-full pointer-events-none" shapeRendering="geometricPrecision">
         {layout.spouseConnectors.map((connector) => (
           <line
