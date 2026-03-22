@@ -13,7 +13,7 @@ export function MemberDetailModal({ member, onClose, onEdit, onDelete }: MemberD
   const isDeceased = !!member.deathDate;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
       <div className="absolute inset-0 bg-foreground/20 backdrop-blur-sm" />
       <div
         className="glass-card rounded-2xl p-6 max-w-md w-full relative z-10 animate-reveal-up shadow-2xl"

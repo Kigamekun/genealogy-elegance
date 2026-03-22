@@ -33,6 +33,14 @@ interface PinchState {
   originContentY: number;
 }
 
+interface TouchDragState {
+  touchId: number | null;
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+}
+
 const MIN_SCALE = 0.2;
 const MAX_SCALE = 2.8;
 const BUTTON_ZOOM_FACTOR = 1.16;
@@ -62,7 +70,13 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     originX: 0,
     originY: 0,
   });
-  const pointerPositionsRef = useRef<Map<number, PointerPoint>>(new Map());
+  const touchDragRef = useRef<TouchDragState>({
+    touchId: null,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+  });
   const pinchRef = useRef<PinchState | null>(null);
   const frameRef = useRef<number | null>(null);
   const fitFrameRef = useRef<number | null>(null);
@@ -161,11 +175,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     });
   }, [fitToView]);
 
-  const getPinchMetrics = useCallback(() => {
-    const points = Array.from(pointerPositionsRef.current.values());
-    if (points.length < 2) return null;
-
-    const [first, second] = points;
+  const getPinchMetricsFromPoints = useCallback((first: PointerPoint, second: PointerPoint) => {
     const dx = second.x - first.x;
     const dy = second.y - first.y;
 
@@ -176,9 +186,9 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     };
   }, []);
 
-  const beginPinch = useCallback(() => {
+  const beginPinch = useCallback((first: PointerPoint, second: PointerPoint) => {
     const container = containerRef.current;
-    const metrics = getPinchMetrics();
+    const metrics = getPinchMetricsFromPoints(first, second);
     if (!container || !metrics) return;
 
     const rect = container.getBoundingClientRect();
@@ -194,13 +204,14 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     };
 
     dragRef.current.pointerId = null;
+    touchDragRef.current.touchId = null;
     setIsDragging(false);
-  }, [getPinchMetrics]);
+  }, [getPinchMetricsFromPoints]);
 
-  const updatePinch = useCallback(() => {
+  const updatePinch = useCallback((first: PointerPoint, second: PointerPoint) => {
     const container = containerRef.current;
     const pinch = pinchRef.current;
-    const metrics = getPinchMetrics();
+    const metrics = getPinchMetricsFromPoints(first, second);
     if (!container || !pinch || !metrics) return;
 
     const rect = container.getBoundingClientRect();
@@ -215,7 +226,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     };
 
     scheduleRender(true);
-  }, [clampScale, getPinchMetrics, scheduleRender]);
+  }, [clampScale, getPinchMetricsFromPoints, scheduleRender]);
 
   const zoomAtClientPoint = useCallback((nextScale: number, clientX: number, clientY: number) => {
     const container = containerRef.current;
@@ -327,6 +338,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
   }, [clampScale, zoomAtClientPoint]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "touch") return;
     if (e.button !== 0 && e.button !== 1) return;
     if (e.button === 0 && shouldIgnorePanTarget(e.target)) return;
 
@@ -335,15 +347,6 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     if (!container) return;
 
     container.setPointerCapture(e.pointerId);
-    pointerPositionsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-    if (pointerPositionsRef.current.size >= 2) {
-      userInteractedRef.current = true;
-      beginPinch();
-      updatePinch();
-      return;
-    }
-
     userInteractedRef.current = true;
     dragRef.current = {
       pointerId: e.pointerId,
@@ -353,18 +356,10 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       originY: transformRef.current.y,
     };
     setIsDragging(true);
-  }, [beginPinch, updatePinch]);
+  }, []);
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (pointerPositionsRef.current.has(e.pointerId)) {
-      pointerPositionsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    }
-
-    if (pinchRef.current && pointerPositionsRef.current.size >= 2) {
-      userInteractedRef.current = true;
-      updatePinch();
-      return;
-    }
+    if (e.pointerType === "touch") return;
 
     if (dragRef.current.pointerId !== e.pointerId) return;
 
@@ -376,7 +371,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       y: dragRef.current.originY + dy,
     };
     scheduleRender(false);
-  }, [scheduleRender, updatePinch]);
+  }, [scheduleRender]);
 
   const stopDragging = useCallback((pointerId: number, currentTarget: HTMLDivElement) => {
     if (dragRef.current.pointerId !== pointerId) return;
@@ -386,42 +381,136 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
   }, []);
 
   const finishPointer = useCallback((pointerId: number, currentTarget: HTMLDivElement) => {
-    pointerPositionsRef.current.delete(pointerId);
-
-    if (pinchRef.current && pointerPositionsRef.current.size < 2) {
-      pinchRef.current = null;
-
-      const [remainingPointerId, remainingPoint] = Array.from(pointerPositionsRef.current.entries())[0] ?? [];
-      if (remainingPointerId !== undefined && remainingPoint) {
-        dragRef.current = {
-          pointerId: remainingPointerId,
-          startX: remainingPoint.x,
-          startY: remainingPoint.y,
-          originX: transformRef.current.x,
-          originY: transformRef.current.y,
-        };
-        setIsDragging(true);
-      }
-    }
-
     stopDragging(pointerId, currentTarget);
     if (currentTarget.hasPointerCapture(pointerId)) currentTarget.releasePointerCapture(pointerId);
   }, [stopDragging]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "touch") return;
     finishPointer(e.pointerId, e.currentTarget);
   }, [finishPointer]);
 
   const handlePointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "touch") return;
     finishPointer(e.pointerId, e.currentTarget);
   }, [finishPointer]);
 
   const handlePointerLeave = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "touch") return;
     if (dragRef.current.pointerId === e.pointerId && e.currentTarget.hasPointerCapture(e.pointerId)) {
       return;
     }
     finishPointer(e.pointerId, e.currentTarget);
   }, [finishPointer]);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    const touches = Array.from(e.touches);
+    if (touches.length >= 2) {
+      userInteractedRef.current = true;
+      beginPinch(
+        { x: touches[0].clientX, y: touches[0].clientY },
+        { x: touches[1].clientX, y: touches[1].clientY },
+      );
+      updatePinch(
+        { x: touches[0].clientX, y: touches[0].clientY },
+        { x: touches[1].clientX, y: touches[1].clientY },
+      );
+      return;
+    }
+
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+    if (shouldIgnorePanTarget(e.target)) return;
+
+    touchDragRef.current = {
+      touchId: touch.identifier,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      originX: transformRef.current.x,
+      originY: transformRef.current.y,
+    };
+  }, [beginPinch, updatePinch]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    const touches = Array.from(e.touches);
+
+    if (touches.length >= 2) {
+      if (!pinchRef.current) {
+        beginPinch(
+          { x: touches[0].clientX, y: touches[0].clientY },
+          { x: touches[1].clientX, y: touches[1].clientY },
+        );
+      }
+
+      userInteractedRef.current = true;
+      e.preventDefault();
+      updatePinch(
+        { x: touches[0].clientX, y: touches[0].clientY },
+        { x: touches[1].clientX, y: touches[1].clientY },
+      );
+      return;
+    }
+
+    const drag = touchDragRef.current;
+    if (drag.touchId === null) return;
+
+    const touch = Array.from(e.touches).find((item) => item.identifier === drag.touchId);
+    if (!touch) return;
+
+    const dx = touch.clientX - drag.startX;
+    const dy = touch.clientY - drag.startY;
+    if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
+
+    userInteractedRef.current = true;
+    e.preventDefault();
+    setIsDragging(true);
+    transformRef.current = {
+      ...transformRef.current,
+      x: drag.originX + dx,
+      y: drag.originY + dy,
+    };
+    scheduleRender(false);
+  }, [beginPinch, scheduleRender, updatePinch]);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    const remainingTouches = Array.from(e.touches);
+
+    if (remainingTouches.length >= 2) {
+      beginPinch(
+        { x: remainingTouches[0].clientX, y: remainingTouches[0].clientY },
+        { x: remainingTouches[1].clientX, y: remainingTouches[1].clientY },
+      );
+      updatePinch(
+        { x: remainingTouches[0].clientX, y: remainingTouches[0].clientY },
+        { x: remainingTouches[1].clientX, y: remainingTouches[1].clientY },
+      );
+      return;
+    }
+
+    pinchRef.current = null;
+
+    if (remainingTouches.length === 1) {
+      const touch = remainingTouches[0];
+      touchDragRef.current = {
+        touchId: touch.identifier,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        originX: transformRef.current.x,
+        originY: transformRef.current.y,
+      };
+      setIsDragging(false);
+      return;
+    }
+
+    touchDragRef.current.touchId = null;
+    setIsDragging(false);
+  }, [beginPinch, updatePinch]);
+
+  const handleTouchCancel = useCallback(() => {
+    pinchRef.current = null;
+    touchDragRef.current.touchId = null;
+    setIsDragging(false);
+  }, []);
 
   const canvas = (
     <div
@@ -481,6 +570,10 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
         onPointerLeave={handlePointerLeave}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
       >
         <div
           ref={contentRef}
