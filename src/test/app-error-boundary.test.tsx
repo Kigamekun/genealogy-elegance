@@ -33,7 +33,8 @@ describe("AppErrorBoundary", () => {
       const cleanup = renderBoundary(<CrashOnRender />);
       try {
         expect(document.body.textContent).toContain("Halaman berhasil diamankan");
-        expect(document.body.textContent).toContain("Muat Ulang");
+        expect(document.body.textContent).toContain("Ada error tak terduga, silakan muat ulang aja.");
+        expect(document.body.textContent).toContain("Muat Ulang Bersih");
       } finally {
         cleanup();
       }

@@ -33,6 +33,11 @@ interface MemberFormProps {
 }
 
 const MAX_IMAGE_SIZE_MB = 1.5;
+const MAX_AVATAR_DIMENSION = 768;
+const MAX_AVATAR_DATA_URL_LENGTH = 220_000;
+const MAX_AVATAR_COMPRESSION_ATTEMPTS = 4;
+const INITIAL_AVATAR_QUALITY = 0.82;
+const MIN_AVATAR_QUALITY = 0.52;
 const MONTH_OPTIONS = [
   { value: "01", label: "Jan" },
   { value: "02", label: "Feb" },
@@ -63,6 +68,69 @@ function getDaysInMonth(month: string, year: string): number {
 function buildDateValue(year: string, month: string, day: string): string {
   if (!year || !month || !day) return "";
   return `${year.padStart(4, "0")}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+}
+
+function loadImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Foto tidak bisa diproses."));
+    };
+
+    image.src = objectUrl;
+  });
+}
+
+function renderAvatarCanvas(image: HTMLImageElement, scale: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Canvas tidak tersedia.");
+  }
+
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+function compressCanvas(canvas: HTMLCanvasElement) {
+  let quality = INITIAL_AVATAR_QUALITY;
+  let dataUrl = canvas.toDataURL("image/jpeg", quality);
+
+  while (dataUrl.length > MAX_AVATAR_DATA_URL_LENGTH && quality > MIN_AVATAR_QUALITY) {
+    quality = Math.max(MIN_AVATAR_QUALITY, quality - 0.08);
+    dataUrl = canvas.toDataURL("image/jpeg", quality);
+  }
+
+  return dataUrl;
+}
+
+async function buildSafeAvatarDataUrl(file: File) {
+  const image = await loadImage(file);
+  let scale = Math.min(1, MAX_AVATAR_DIMENSION / Math.max(image.width, image.height));
+
+  for (let attempt = 0; attempt < MAX_AVATAR_COMPRESSION_ATTEMPTS; attempt += 1) {
+    const canvas = renderAvatarCanvas(image, scale);
+    const dataUrl = compressCanvas(canvas);
+
+    if (dataUrl.length <= MAX_AVATAR_DATA_URL_LENGTH) {
+      return dataUrl;
+    }
+
+    scale *= 0.82;
+  }
+
+  throw new Error("Foto terlalu besar untuk disimpan dengan aman. Coba pilih gambar yang lebih ringan.");
 }
 
 function DateFieldGroup({
@@ -195,7 +263,7 @@ export function MemberForm({
     [deathDay, deathMonth, deathYear, isDeceased],
   );
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -205,14 +273,19 @@ export function MemberForm({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setAvatarUrl(reader.result);
-        setAvatarError("");
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const safeAvatarUrl = await buildSafeAvatarDataUrl(file);
+      setAvatarUrl(safeAvatarUrl);
+      setAvatarError("");
+    } catch (error) {
+      setAvatarError(
+        error instanceof Error
+          ? error.message
+          : "Foto terlalu besar untuk disimpan dengan aman. Coba pilih gambar yang lebih ringan.",
+      );
+    } finally {
+      e.target.value = "";
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {

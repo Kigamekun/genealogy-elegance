@@ -8,8 +8,13 @@ import {
   getSpouseRelations,
   getSpouseRelationStatus,
   normalizeMemberRelations,
+  sanitizeAvatarUrl,
   syncMemberRelations,
 } from "@/lib/family-data";
+import {
+  FAMILY_TREE_STORAGE_KEY,
+  LEGACY_FAMILY_TREE_STORAGE_KEYS,
+} from "@/lib/family-storage";
 import {
   type FamilyTreeSyncStatus,
   loadCloudMembers,
@@ -32,16 +37,14 @@ function toTime(dateString: string): number {
   return Number.isNaN(value) ? 0 : value;
 }
 
-const STORAGE_KEY = "safari-family.members.v1";
-const LEGACY_STORAGE_KEYS = ["genealogy-elegance.members.v4", "genealogy-elegance.members.v3"];
 const CLOUD_POLL_INTERVAL_MS = 12000;
 
 function loadMembersFromStorage(): FamilyMember[] {
   if (typeof window === "undefined") return getInitialMembers();
 
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY)
-      ?? LEGACY_STORAGE_KEYS.map((key) => window.localStorage.getItem(key)).find(Boolean)
+    const stored = window.localStorage.getItem(FAMILY_TREE_STORAGE_KEY)
+      ?? LEGACY_FAMILY_TREE_STORAGE_KEYS.map((key) => window.localStorage.getItem(key)).find(Boolean)
       ?? null;
     if (!stored) return getInitialMembers();
 
@@ -52,9 +55,35 @@ function loadMembersFromStorage(): FamilyMember[] {
   }
 }
 
+function buildStorageSafeMembers(members: FamilyMember[]): FamilyMember[] {
+  return members.map((member) => {
+    const safeAvatarUrl = sanitizeAvatarUrl(member.avatarUrl);
+    return safeAvatarUrl === member.avatarUrl
+      ? member
+      : {
+          ...member,
+          avatarUrl: safeAvatarUrl,
+        };
+  });
+}
+
 function persistMembers(members: FamilyMember[]) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(members));
+
+  const storageSafeMembers = buildStorageSafeMembers(members);
+
+  try {
+    window.localStorage.setItem(FAMILY_TREE_STORAGE_KEY, JSON.stringify(storageSafeMembers));
+  } catch (error) {
+    console.error("Safari Family failed to persist the full local cache and will retry with a lighter snapshot.", error);
+
+    try {
+      const lightMembers = storageSafeMembers.map(({ avatarUrl, ...member }) => member);
+      window.localStorage.setItem(FAMILY_TREE_STORAGE_KEY, JSON.stringify(lightMembers));
+    } catch (fallbackError) {
+      console.error("Safari Family could not persist the local cache even after slimming it down.", fallbackError);
+    }
+  }
 }
 
 function buildExpandedNodes(members: FamilyMember[]): Set<string> {

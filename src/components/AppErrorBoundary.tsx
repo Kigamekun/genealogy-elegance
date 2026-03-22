@@ -1,6 +1,7 @@
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { clearFamilyTreeBrowserCache } from "@/lib/family-storage";
 
 interface AppErrorBoundaryProps {
   children: ReactNode;
@@ -8,11 +9,13 @@ interface AppErrorBoundaryProps {
 
 interface AppErrorBoundaryState {
   hasError: boolean;
+  isReloading: boolean;
 }
 
 export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
   state: AppErrorBoundaryState = {
     hasError: false,
+    isReloading: false,
   };
 
   static getDerivedStateFromError(): AppErrorBoundaryState {
@@ -23,8 +26,21 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
     console.error("Safari Family crashed and was recovered by the app boundary.", error, errorInfo);
   }
 
-  private handleReload = () => {
-    if (typeof window !== "undefined") {
+  private handleReload = async () => {
+    if (typeof window === "undefined" || this.state.isReloading) {
+      return;
+    }
+
+    this.setState({ isReloading: true });
+
+    try {
+      await clearFamilyTreeBrowserCache();
+
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set("_recovery", Date.now().toString());
+      window.location.replace(nextUrl.toString());
+    } catch (error) {
+      console.error("Safari Family failed to clear local browser data during recovery.", error);
       window.location.reload();
     }
   };
@@ -41,14 +57,11 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
             <AlertTriangle className="h-6 w-6" />
           </div>
           <h1 className="font-display text-2xl leading-tight text-foreground">Halaman berhasil diamankan</h1>
-          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            Ada error tak terduga, tapi aplikasi tidak saya biarkan jatuh menjadi layar putih.
-            Muat ulang halaman untuk masuk lagi ke pohon keluarga Anda.
-          </p>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">Ada error tak terduga, silakan muat ulang aja.</p>
           <div className="mt-5 flex justify-center">
-            <Button type="button" onClick={this.handleReload} className="gap-2">
+            <Button type="button" onClick={() => void this.handleReload()} className="gap-2" disabled={this.state.isReloading}>
               <RefreshCw className="h-4 w-4" />
-              Muat Ulang
+              {this.state.isReloading ? "Membersihkan Data..." : "Muat Ulang Bersih"}
             </Button>
           </div>
         </div>

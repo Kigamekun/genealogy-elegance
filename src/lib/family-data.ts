@@ -1,6 +1,7 @@
 import initialMembersData from "@/data/family-tree.initial.json";
 
 export type SpouseRelationStatus = "married" | "divorced";
+export const MAX_INLINE_AVATAR_URL_LENGTH = 300_000;
 
 export interface SpouseRelation {
   spouseId: string;
@@ -60,6 +61,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+export function sanitizeAvatarUrl(value?: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return undefined;
+  if (!trimmedValue.startsWith("data:")) return trimmedValue;
+
+  return trimmedValue.length <= MAX_INLINE_AVATAR_URL_LENGTH ? trimmedValue : undefined;
+}
+
 function coerceMember(raw: unknown): FamilyMember | null {
   if (!isRecord(raw)) return null;
 
@@ -81,7 +92,7 @@ function coerceMember(raw: unknown): FamilyMember | null {
     gender,
     relation: typeof raw.relation === "string" && raw.relation.trim() ? raw.relation : "Anggota Keluarga",
     description: typeof raw.description === "string" ? raw.description : "",
-    avatarUrl: typeof raw.avatarUrl === "string" && raw.avatarUrl.trim() ? raw.avatarUrl : undefined,
+    avatarUrl: sanitizeAvatarUrl(raw.avatarUrl),
     parentId: typeof raw.parentId === "string" ? raw.parentId : undefined,
     spouseId: typeof raw.spouseId === "string" ? raw.spouseId : undefined,
     parentIds: Array.isArray(raw.parentIds)

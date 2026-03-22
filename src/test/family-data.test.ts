@@ -6,6 +6,7 @@ import {
   getStepParentIds,
   getSpouseRelationStatus,
   getSpouses,
+  hydrateMembers,
   isStepChildForMember,
   syncMemberRelations,
 } from "@/lib/family-data";
@@ -88,5 +89,22 @@ describe("family-data relationships", () => {
 
     expect(getSpouseRelationStatus(husband, "wife")).toBe("divorced");
     expect(getSpouseRelationStatus(wife, "husband")).toBe("divorced");
+  });
+
+  it("drops oversized inline avatars during hydration to keep the app stable", () => {
+    const members = hydrateMembers([
+      {
+        id: "big-avatar",
+        name: "Avatar Besar",
+        birthDate: "1980-01-01",
+        gender: "male",
+        relation: "Anggota",
+        description: "",
+        generation: 1,
+        avatarUrl: `data:image/jpeg;base64,${"a".repeat(320_000)}`,
+      },
+    ]);
+
+    expect(members[0]?.avatarUrl).toBeUndefined();
   });
 });
