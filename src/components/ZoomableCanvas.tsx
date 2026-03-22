@@ -57,6 +57,13 @@ function shouldIgnorePanTarget(target: EventTarget | null): boolean {
   return Boolean(element.closest("button, a, input, textarea, select, [role='button'], [data-no-pan='true']"));
 }
 
+function shouldIgnoreTouchPanTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  if (!element) return false;
+  if (element.closest("[data-pan-surface='true']")) return false;
+  return shouldIgnorePanTarget(target);
+}
+
 export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
   const [scalePercent, setScalePercent] = useState(100);
   const [isDragging, setIsDragging] = useState(false);
@@ -225,7 +232,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       originX: transformRef.current.x,
       originY: transformRef.current.y,
       activated: false,
-      startedOnInteractive: startedOnInteractive ?? shouldIgnorePanTarget(target),
+      startedOnInteractive: startedOnInteractive ?? shouldIgnoreTouchPanTarget(target),
     };
   }, []);
 
@@ -504,7 +511,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     const container = containerRef.current;
     if (!container) return undefined;
 
-    const options: AddEventListenerOptions = { passive: false };
+    const options: AddEventListenerOptions = { passive: false, capture: true };
     container.addEventListener("touchstart", handleNativeTouchStart, options);
     container.addEventListener("touchmove", handleNativeTouchMove, options);
     container.addEventListener("touchend", handleNativeTouchEnd, options);

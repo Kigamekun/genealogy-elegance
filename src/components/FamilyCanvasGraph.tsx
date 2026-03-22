@@ -1048,6 +1048,7 @@ export function FamilyCanvasGraph({
           >
             <button
               data-no-pan="true"
+              data-pan-surface="true"
               onClick={() => handleMemberClick(member)}
               className={cn(
                 "glass-card group relative h-[122px] w-full overflow-hidden rounded-3xl border p-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg",
