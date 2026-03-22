@@ -1,17 +1,15 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useFamilyTree } from "@/hooks/useFamilyTree";
 import { MemberDetailModal } from "@/components/MemberDetailModal";
 import { MemberForm, type MemberFormValues } from "@/components/MemberForm";
 import { SearchBar } from "@/components/SearchBar";
 import { ZoomableCanvas } from "@/components/ZoomableCanvas";
 import { FamilyCanvasGraph } from "@/components/FamilyCanvasGraph";
-import { FamilyMember, getSpouseIds } from "@/lib/family-data";
-import { TreePine, Plus, Users } from "lucide-react";
+import { FamilyMember, getChildren, getSpouseIds, hydrateMembers } from "@/lib/family-data";
+import { Download, Plus, TreePine, Upload, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 function inferRelation(gender: FamilyMember["gender"], hint?: "child" | "spouse" | "head" | "member"): string {
-  if (hint === "child") return "Anak";
-  if (hint === "spouse") return gender === "female" ? "Istri" : "Suami";
   if (hint === "head") return "Kepala Keluarga";
   return "Anggota Keluarga";
 }
@@ -24,8 +22,9 @@ const Index = () => {
     selectedMember, setSelectedMember,
     editingMember, setEditingMember,
     isAddingMember, addIntent, startAddMember, cancelAddMember,
-    addMember, updateMember, deleteMember, connectParent, setFamilyHead,
+    addMember, updateMember, deleteMember, replaceMembers, connectParent, setFamilyHead,
   } = useFamilyTree();
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const isSearching = searchQuery || generationFilter !== null;
   const membersById = useMemo(
@@ -71,13 +70,12 @@ const Index = () => {
           ? Math.max(1, spouseGeneration)
           : 1;
 
-    const today = new Date().toISOString().slice(0, 10);
-
     addMember({
       name: values.name,
       gender: normalizedGender,
+      birthDate: values.birthDate,
       description: values.description,
-      birthDate: today,
+      avatarUrl: values.avatarUrl,
       relation: inferRelation(normalizedGender, addIntent?.relationHint),
       generation,
       parentIds: parentIds && parentIds.length > 0 ? parentIds : undefined,
@@ -92,7 +90,9 @@ const Index = () => {
       ...editingMember,
       name: values.name,
       gender: values.gender,
+      birthDate: values.birthDate,
       description: values.description,
+      avatarUrl: values.avatarUrl,
     });
   };
 
@@ -119,6 +119,55 @@ const Index = () => {
     });
   };
 
+  const handleDeleteMember = (memberId: string) => {
+    const member = membersById.get(memberId);
+    if (!member) return;
+
+    const childCount = getChildren(members, memberId).length;
+    const spouseCount = getSpouseIds(member).length;
+    const detailParts = [
+      spouseCount > 0 ? `${spouseCount} pasangan` : null,
+      childCount > 0 ? `${childCount} anak langsung` : null,
+    ].filter(Boolean);
+    const detailSuffix = detailParts.length > 0 ? `\nRelasi terkait: ${detailParts.join(", ")}.` : "";
+
+    if (!window.confirm(`Hapus ${member.name}?${detailSuffix}`)) return;
+
+    deleteMember(memberId);
+    setActiveCanvasMemberId((currentId) => (currentId === memberId ? null : currentId));
+    setSelectedMember((currentMember) => (currentMember?.id === memberId ? null : currentMember));
+  };
+
+  const handleExportJson = () => {
+    const blob = new Blob([JSON.stringify(members, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "genealogy-elegance-data.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const importedMembers = hydrateMembers(JSON.parse(text));
+      if (importedMembers.length === 0) {
+        window.alert("File JSON tidak berisi data anggota yang valid.");
+      } else {
+        replaceMembers(importedMembers);
+        setActiveCanvasMemberId(null);
+      }
+    } catch {
+      window.alert("File JSON tidak bisa dibaca. Pastikan formatnya valid.");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 glass-card border-b border-border/50">
@@ -128,6 +177,21 @@ const Index = () => {
             <h1 className="font-display text-lg text-foreground leading-none">Silsilah Keluarga</h1>
           </div>
           <div className="flex items-center gap-2">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json"
+              className="hidden"
+              onChange={handleImportJson}
+            />
+            <Button size="sm" variant="outline" onClick={() => importInputRef.current?.click()} className="gap-1.5">
+              <Upload className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Import JSON</span>
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleExportJson} className="gap-1.5">
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Export JSON</span>
+            </Button>
             <Button size="sm" variant="outline" onClick={() => startAddMember({ asFamilyHead: true, relationHint: "head" })} className="gap-1.5">
               <TreePine className="w-3.5 h-3.5" />
               <span className="hidden md:inline">Kepala Baru</span>
@@ -193,7 +257,9 @@ const Index = () => {
                     )}
                     <div className="min-w-0">
                       <p className="font-semibold text-sm truncate text-foreground">{member.name}</p>
-                      <p className="text-xs text-muted-foreground">{member.relation} · Gen {member.generation}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {member.gender === "male" ? "Laki-laki" : "Perempuan"} · Gen {member.generation}
+                      </p>
                     </div>
                   </div>
                 </button>
@@ -217,6 +283,7 @@ const Index = () => {
                 onAddChild={startAddChild}
                 onAddSpouse={startAddSpouse}
                 onSetFamilyHead={setFamilyHead}
+                onDeleteMember={handleDeleteMember}
                 onConnectParent={connectParent}
               />
             </ZoomableCanvas>
@@ -232,7 +299,7 @@ const Index = () => {
             setEditingMember(selectedMember);
             setSelectedMember(null);
           }}
-          onDelete={() => deleteMember(selectedMember.id)}
+          onDelete={() => handleDeleteMember(selectedMember.id)}
         />
       )}
 

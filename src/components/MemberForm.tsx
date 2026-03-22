@@ -2,12 +2,14 @@ import { useState } from "react";
 import { FamilyMember } from "@/lib/family-data";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { X } from "lucide-react";
+import { Calendar, ImagePlus, Trash2, X } from "lucide-react";
 
 export interface MemberFormValues {
   name: string;
   gender: FamilyMember["gender"];
+  birthDate: string;
   description: string;
+  avatarUrl?: string;
 }
 
 interface MemberFormProps {
@@ -19,6 +21,8 @@ interface MemberFormProps {
   onCancel: () => void;
 }
 
+const MAX_IMAGE_SIZE_MB = 1.5;
+
 export function MemberForm({
   member,
   title,
@@ -29,16 +33,41 @@ export function MemberForm({
 }: MemberFormProps) {
   const [name, setName] = useState(member?.name ?? "");
   const [gender, setGender] = useState<FamilyMember["gender"]>(member?.gender ?? defaultGender);
+  const [birthDate, setBirthDate] = useState(member?.birthDate ?? new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState(member?.description ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(member?.avatarUrl ?? "");
+  const [avatarError, setAvatarError] = useState("");
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
+      setAvatarError(`Ukuran gambar maksimal ${MAX_IMAGE_SIZE_MB} MB supaya aman disimpan di browser.`);
+      e.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setAvatarUrl(reader.result);
+        setAvatarError("");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || !birthDate) return;
 
     onSave({
       name: name.trim(),
       gender,
+      birthDate,
       description: description.trim(),
+      avatarUrl: avatarUrl || undefined,
     });
   };
 
@@ -61,9 +90,47 @@ export function MemberForm({
         </h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+            <div className="flex items-center gap-4">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={name || "Preview foto"} className="h-20 w-20 rounded-2xl object-cover ring-2 ring-border" />
+              ) : (
+                <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
+                  <ImagePlus className="h-6 w-6" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1 space-y-2">
+                <div>
+                  <label htmlFor="avatar-upload" className="text-xs font-medium text-muted-foreground mb-1 block">
+                    Foto Anggota
+                  </label>
+                  <Input id="avatar-upload" type="file" accept="image/*" onChange={handleAvatarChange} />
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Foto disimpan di browser agar tetap berjalan tanpa backend.
+                </p>
+                {avatarUrl && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAvatarUrl("");
+                      setAvatarError("");
+                    }}
+                    className="inline-flex items-center gap-1 text-xs text-destructive hover:opacity-80"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Hapus foto
+                  </button>
+                )}
+                {avatarError && <p className="text-xs text-destructive">{avatarError}</p>}
+              </div>
+            </div>
+          </div>
+
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Nama Lengkap *</label>
+            <label htmlFor="member-name" className="text-xs font-medium text-muted-foreground mb-1 block">Nama Lengkap *</label>
             <Input
+              id="member-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Masukkan nama"
@@ -96,8 +163,26 @@ export function MemberForm({
           </div>
 
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Deskripsi Singkat</label>
+            <label htmlFor="member-birthdate" className="text-xs font-medium text-muted-foreground mb-1 block">
+              Tanggal Lahir *
+            </label>
+            <div className="relative">
+              <Input
+                id="member-birthdate"
+                type="date"
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value)}
+                required
+                className="pr-10"
+              />
+              <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="member-description" className="text-xs font-medium text-muted-foreground mb-1 block">Deskripsi Singkat</label>
             <textarea
+              id="member-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Ceritakan sedikit tentang anggota ini..."

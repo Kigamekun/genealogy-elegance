@@ -1,7 +1,8 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import {
   FamilyMember,
   getInitialMembers,
+  hydrateMembers,
   getParentIds,
   getSpouseIds,
   normalizeMemberRelations,
@@ -21,6 +22,27 @@ export interface AddMemberIntent {
 function toTime(dateString: string): number {
   const value = Date.parse(dateString);
   return Number.isNaN(value) ? 0 : value;
+}
+
+const STORAGE_KEY = "genealogy-elegance.members.v1";
+
+function loadMembersFromStorage(): FamilyMember[] {
+  if (typeof window === "undefined") return getInitialMembers();
+
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (!stored) return getInitialMembers();
+
+    const hydrated = hydrateMembers(JSON.parse(stored));
+    return hydrated.length > 0 ? hydrated : getInitialMembers();
+  } catch {
+    return getInitialMembers();
+  }
+}
+
+function persistMembers(members: FamilyMember[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(members));
 }
 
 function applyFamilyRules(members: FamilyMember[]): FamilyMember[] {
@@ -97,7 +119,7 @@ function applyFamilyRules(members: FamilyMember[]): FamilyMember[] {
 }
 
 export function useFamilyTree() {
-  const [members, setMembers] = useState<FamilyMember[]>(getInitialMembers);
+  const [members, setMembers] = useState<FamilyMember[]>(loadMembersFromStorage);
   const [searchQuery, setSearchQuery] = useState("");
   const [generationFilter, setGenerationFilter] = useState<number | null>(null);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(["1"]));
@@ -105,6 +127,15 @@ export function useFamilyTree() {
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null);
   const [isAddingMember, setIsAddingMember] = useState(false);
   const [addIntent, setAddIntent] = useState<AddMemberIntent | null>(null);
+
+  useEffect(() => {
+    persistMembers(members);
+  }, [members]);
+
+  useEffect(() => {
+    setSelectedMember((prev) => prev ? members.find((member) => member.id === prev.id) ?? null : null);
+    setEditingMember((prev) => prev ? members.find((member) => member.id === prev.id) ?? null : null);
+  }, [members]);
 
   const toggleNode = useCallback((id: string) => {
     setExpandedNodes((prev) => {
@@ -307,6 +338,23 @@ export function useFamilyTree() {
     }
   }, []);
 
+  const replaceMembers = useCallback((nextMembers: FamilyMember[]) => {
+    const reconciledMembers = applyFamilyRules(syncMemberRelations(nextMembers));
+    setMembers(reconciledMembers);
+    setSelectedMember(null);
+    setEditingMember(null);
+    setIsAddingMember(false);
+    setAddIntent(null);
+    setExpandedNodes(() => {
+      const next = new Set<string>();
+      reconciledMembers.forEach((member) => {
+        if (member.isFamilyHead) next.add(member.id);
+        getParentIds(member).forEach((parentId) => next.add(parentId));
+      });
+      return next;
+    });
+  }, []);
+
   return {
     members,
     filteredMembers,
@@ -329,6 +377,7 @@ export function useFamilyTree() {
     addMember,
     updateMember,
     deleteMember,
+    replaceMembers,
     connectParent,
     connectSpouse,
     setFamilyHead,

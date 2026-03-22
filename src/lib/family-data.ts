@@ -1,12 +1,4 @@
-import avatarAhmad from "@/assets/avatar-ahmad.jpg";
-import avatarSiti from "@/assets/avatar-siti.jpg";
-import avatarBudi from "@/assets/avatar-budi.jpg";
-import avatarDewi from "@/assets/avatar-dewi.jpg";
-import avatarRatna from "@/assets/avatar-ratna.jpg";
-import avatarHendra from "@/assets/avatar-hendra.jpg";
-import avatarFajar from "@/assets/avatar-fajar.jpg";
-import avatarAnisa from "@/assets/avatar-anisa.jpg";
-import avatarRizky from "@/assets/avatar-rizky.jpg";
+import initialMembersData from "@/data/family-tree.initial.json";
 
 export interface FamilyMember {
   id: string;
@@ -17,75 +9,65 @@ export interface FamilyMember {
   relation: string;
   description: string;
   avatarUrl?: string;
-  // Legacy fields kept for compatibility with older persisted data.
   parentId?: string;
   spouseId?: string;
-  // New relationship fields that allow multiple relations.
   parentIds?: string[];
   spouseIds?: string[];
   isFamilyHead?: boolean;
   generation: number;
 }
 
-const initialMembers: FamilyMember[] = [
-  {
-    id: "1", name: "Ahmad Suryadi", birthDate: "1940-03-15", deathDate: "2015-08-20",
-    gender: "male", relation: "Kakek",
-    description: "Pendiri keluarga besar Suryadi, seorang guru besar di Universitas Gadjah Mada.",
-    avatarUrl: avatarAhmad, generation: 1, isFamilyHead: true, spouseIds: ["2"],
-  },
-  {
-    id: "2", name: "Siti Rahayu", birthDate: "1945-07-22",
-    gender: "female", relation: "Nenek",
-    description: "Ibu dari tiga anak, dikenal sebagai perajin batik yang berbakat.",
-    avatarUrl: avatarSiti, spouseIds: ["1"], generation: 1,
-  },
-  {
-    id: "3", name: "Budi Suryadi", birthDate: "1968-01-10",
-    gender: "male", relation: "Ayah",
-    description: "Anak sulung, bekerja sebagai dokter spesialis di Jakarta.",
-    avatarUrl: avatarBudi, parentIds: ["1", "2"], spouseIds: ["4"], generation: 2,
-  },
-  {
-    id: "4", name: "Dewi Lestari", birthDate: "1970-11-05",
-    gender: "female", relation: "Ibu",
-    description: "Istri Budi, seorang arsitek yang merancang berbagai bangunan ikonik.",
-    avatarUrl: avatarDewi, spouseIds: ["3"], generation: 2,
-  },
-  {
-    id: "5", name: "Ratna Suryadi", birthDate: "1972-06-18",
-    gender: "female", relation: "Bibi",
-    description: "Anak kedua, seorang pengusaha kuliner sukses di Yogyakarta.",
-    avatarUrl: avatarRatna, parentIds: ["1", "2"], spouseIds: ["6"], generation: 2,
-  },
-  {
-    id: "6", name: "Hendra Wijaya", birthDate: "1971-09-30",
-    gender: "male", relation: "Paman",
-    description: "Suami Ratna, seorang seniman dan fotografer profesional.",
-    avatarUrl: avatarHendra, spouseIds: ["5"], generation: 2,
-  },
-  {
-    id: "7", name: "Fajar Suryadi", birthDate: "1995-04-12",
-    gender: "male", relation: "Anak",
-    description: "Anak pertama Budi, mahasiswa S2 teknik informatika.",
-    avatarUrl: avatarFajar, parentIds: ["3", "4"], generation: 3,
-  },
-  {
-    id: "8", name: "Anisa Suryadi", birthDate: "1998-12-25",
-    gender: "female", relation: "Anak",
-    description: "Anak kedua Budi, seorang desainer grafis berbakat.",
-    avatarUrl: avatarAnisa, parentIds: ["3", "4"], generation: 3,
-  },
-  {
-    id: "9", name: "Rizky Wijaya", birthDate: "1997-08-08",
-    gender: "male", relation: "Sepupu",
-    description: "Anak Ratna dan Hendra, seorang musisi dan komposer.",
-    avatarUrl: avatarRizky, parentIds: ["5", "6"], generation: 3,
-  },
-];
-
 function uniqueIds(ids: Array<string | undefined>): string[] {
   return Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function coerceMember(raw: unknown): FamilyMember | null {
+  if (!isRecord(raw)) return null;
+
+  const id = typeof raw.id === "string" ? raw.id : undefined;
+  const name = typeof raw.name === "string" ? raw.name.trim() : "";
+  const birthDate = typeof raw.birthDate === "string" ? raw.birthDate : "";
+  const gender = raw.gender === "female" ? "female" : raw.gender === "male" ? "male" : undefined;
+  const generation = Number(raw.generation);
+
+  if (!id || !name || !birthDate || !gender || !Number.isFinite(generation)) {
+    return null;
+  }
+
+  return normalizeMemberRelations({
+    id,
+    name,
+    birthDate,
+    deathDate: typeof raw.deathDate === "string" ? raw.deathDate : undefined,
+    gender,
+    relation: typeof raw.relation === "string" && raw.relation.trim() ? raw.relation : "Anggota Keluarga",
+    description: typeof raw.description === "string" ? raw.description : "",
+    avatarUrl: typeof raw.avatarUrl === "string" && raw.avatarUrl.trim() ? raw.avatarUrl : undefined,
+    parentId: typeof raw.parentId === "string" ? raw.parentId : undefined,
+    spouseId: typeof raw.spouseId === "string" ? raw.spouseId : undefined,
+    parentIds: Array.isArray(raw.parentIds)
+      ? raw.parentIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      : undefined,
+    spouseIds: Array.isArray(raw.spouseIds)
+      ? raw.spouseIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      : undefined,
+    isFamilyHead: Boolean(raw.isFamilyHead),
+    generation: Math.max(1, Math.round(generation)),
+  });
+}
+
+export function hydrateMembers(rawMembers: unknown): FamilyMember[] {
+  if (!Array.isArray(rawMembers)) return [];
+
+  const members = rawMembers
+    .map((rawMember) => coerceMember(rawMember))
+    .filter((member): member is FamilyMember => Boolean(member));
+
+  return syncMemberRelations(members);
 }
 
 export function getParentIds(member: FamilyMember): string[] {
@@ -102,6 +84,8 @@ export function normalizeMemberRelations(member: FamilyMember): FamilyMember {
 
   return {
     ...member,
+    relation: member.relation?.trim() || "Anggota Keluarga",
+    description: member.description ?? "",
     parentIds: parentIds.length > 0 ? parentIds : undefined,
     parentId: parentIds[0],
     spouseIds: spouseIds.length > 0 ? spouseIds : undefined,
@@ -142,7 +126,7 @@ export function syncMemberRelations(members: FamilyMember[]): FamilyMember[] {
 }
 
 export function getInitialMembers(): FamilyMember[] {
-  return syncMemberRelations(initialMembers.map((member) => ({ ...member })));
+  return hydrateMembers(initialMembersData);
 }
 
 export function getChildren(members: FamilyMember[], parentId: string): FamilyMember[] {

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Calendar, Crown, Heart, Pencil, UserPlus, UsersRound, X } from "lucide-react";
+import { Calendar, Crown, Heart, Pencil, Trash2, UserPlus, UsersRound, X } from "lucide-react";
 import { FamilyMember, getParentIds, getSpouseIds, getSpouses } from "@/lib/family-data";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,7 @@ interface FamilyCanvasGraphProps {
   onAddChild: (parentId: string) => void;
   onAddSpouse: (memberId: string) => void;
   onSetFamilyHead: (memberId: string, isFamilyHead: boolean) => void;
+  onDeleteMember: (memberId: string) => void;
   onConnectParent: (childId: string, parentId: string) => void;
 }
 
@@ -343,6 +344,7 @@ export function FamilyCanvasGraph({
   onAddChild,
   onAddSpouse,
   onSetFamilyHead,
+  onDeleteMember,
   onConnectParent,
 }: FamilyCanvasGraphProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -1081,6 +1083,13 @@ export function FamilyCanvasGraph({
                 onClick={() => onSetFamilyHead(member.id, !member.isFamilyHead)}
               >
                 <Crown className="mx-auto h-3.5 w-3.5" />
+              </ActionButton>
+              <ActionButton
+                title="Hapus anggota"
+                className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => onDeleteMember(member.id)}
+              >
+                <Trash2 className="mx-auto h-3.5 w-3.5" />
               </ActionButton>
             </div>
           </div>

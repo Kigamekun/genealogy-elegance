@@ -42,6 +42,7 @@ function renderGraph(members: FamilyMember[]) {
         onAddChild={noop}
         onAddSpouse={noop}
         onSetFamilyHead={noop}
+        onDeleteMember={noop}
         onConnectParent={noop}
       />,
     );

@@ -35,7 +35,9 @@ export function MemberDetailModal({ member, onClose, onEdit, onDelete }: MemberD
           )}
           <div>
             <h2 className="font-display text-xl text-foreground leading-tight">{member.name}</h2>
-            <p className="text-sm text-muted-foreground">{member.relation} · Generasi {member.generation}</p>
+            <p className="text-sm text-muted-foreground">
+              {member.gender === "male" ? "Laki-laki" : "Perempuan"} · Generasi {member.generation}
+            </p>
           </div>
         </div>
 
