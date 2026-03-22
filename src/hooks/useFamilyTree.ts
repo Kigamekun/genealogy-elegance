@@ -24,7 +24,7 @@ function toTime(dateString: string): number {
   return Number.isNaN(value) ? 0 : value;
 }
 
-const STORAGE_KEY = "genealogy-elegance.members.v1";
+const STORAGE_KEY = "genealogy-elegance.members.v2";
 
 function loadMembersFromStorage(): FamilyMember[] {
   if (typeof window === "undefined") return getInitialMembers();
@@ -122,7 +122,11 @@ export function useFamilyTree() {
   const [members, setMembers] = useState<FamilyMember[]>(loadMembersFromStorage);
   const [searchQuery, setSearchQuery] = useState("");
   const [generationFilter, setGenerationFilter] = useState<number | null>(null);
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(["1"]));
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set(
+    getInitialMembers()
+      .filter((member) => member.isFamilyHead || getParentIds(member).length === 0)
+      .map((member) => member.id),
+  ));
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null);
   const [isAddingMember, setIsAddingMember] = useState(false);

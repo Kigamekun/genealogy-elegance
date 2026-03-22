@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect, type ReactNode } from "react";
-import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Minimize2, RotateCcw } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ZoomableCanvasProps {
   children: ReactNode;
@@ -33,6 +34,9 @@ function shouldIgnorePanTarget(target: EventTarget | null): boolean {
 export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
   const [scalePercent, setScalePercent] = useState(100);
   const [isDragging, setIsDragging] = useState(false);
+  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
+  const [isFallbackFullscreen, setIsFallbackFullscreen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<TransformState>({ x: 0, y: 0, scale: 1 });
@@ -73,6 +77,38 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
     };
   }, [applyTransform]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+
+    const syncFullscreenState = () => {
+      setIsNativeFullscreen(document.fullscreenElement === wrapperRef.current);
+    };
+
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    syncFullscreenState();
+
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreenState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isFallbackFullscreen || typeof document === "undefined") return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsFallbackFullscreen(false);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isFallbackFullscreen]);
 
   const clampScale = useCallback((scale: number) => Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale)), []);
 
@@ -115,6 +151,33 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     transformRef.current = { x: 0, y: 0, scale: 1 };
     scheduleRender(true);
   };
+  const isImmersive = isNativeFullscreen || isFallbackFullscreen;
+
+  const toggleFullscreen = useCallback(async () => {
+    if (typeof document === "undefined") return;
+
+    if (isFallbackFullscreen) {
+      setIsFallbackFullscreen(false);
+      return;
+    }
+
+    if (document.fullscreenElement === wrapperRef.current) {
+      await document.exitFullscreen();
+      return;
+    }
+
+    const wrapper = wrapperRef.current;
+    if (wrapper?.requestFullscreen) {
+      try {
+        await wrapper.requestFullscreen();
+        return;
+      } catch {
+        // Fall back to a fixed immersive layout for browsers that reject fullscreen.
+      }
+    }
+
+    setIsFallbackFullscreen(true);
+  }, [isFallbackFullscreen]);
 
   const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -180,22 +243,37 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
   }, [stopDragging]);
 
   return (
-    <div className="relative w-full rounded-xl border border-border bg-card/30 overflow-hidden select-none" style={{ minHeight: "500px" }}>
+    <div
+      ref={wrapperRef}
+      className={cn(
+        "relative w-full overflow-hidden select-none border border-border bg-card/30 transition-[height,border-radius,background-color] duration-300",
+        isImmersive
+          ? "fixed inset-0 z-[80] rounded-none border-0 bg-background"
+          : "rounded-[28px]",
+      )}
+      style={{
+        height: isImmersive ? "100dvh" : "min(100dvh - 12rem, 920px)",
+        minHeight: isImmersive ? "100dvh" : "clamp(520px, 76dvh, 920px)",
+      }}
+    >
       {/* Zoom controls */}
-      <div className="absolute top-3 right-3 z-20 flex flex-col gap-1">
-        <button onClick={zoomIn} className="p-2 rounded-lg bg-background/80 backdrop-blur-sm border border-border hover:bg-secondary transition-colors active:scale-95 shadow-sm">
+      <div className="absolute top-3 right-3 z-20 flex flex-col gap-1.5 sm:top-4 sm:right-4">
+        <button onClick={zoomIn} title="Perbesar" className="p-2.5 rounded-2xl bg-background/88 backdrop-blur-sm border border-border hover:bg-secondary transition-colors active:scale-95 shadow-sm">
           <ZoomIn className="w-4 h-4 text-foreground" />
         </button>
-        <button onClick={zoomOut} className="p-2 rounded-lg bg-background/80 backdrop-blur-sm border border-border hover:bg-secondary transition-colors active:scale-95 shadow-sm">
+        <button onClick={zoomOut} title="Perkecil" className="p-2.5 rounded-2xl bg-background/88 backdrop-blur-sm border border-border hover:bg-secondary transition-colors active:scale-95 shadow-sm">
           <ZoomOut className="w-4 h-4 text-foreground" />
         </button>
-        <button onClick={resetView} className="p-2 rounded-lg bg-background/80 backdrop-blur-sm border border-border hover:bg-secondary transition-colors active:scale-95 shadow-sm">
-          <Maximize2 className="w-4 h-4 text-foreground" />
+        <button onClick={resetView} title="Reset tampilan" className="p-2.5 rounded-2xl bg-background/88 backdrop-blur-sm border border-border hover:bg-secondary transition-colors active:scale-95 shadow-sm">
+          <RotateCcw className="w-4 h-4 text-foreground" />
+        </button>
+        <button onClick={() => { void toggleFullscreen(); }} title={isImmersive ? "Keluar fullscreen" : "Masuk fullscreen"} className="p-2.5 rounded-2xl bg-background/88 backdrop-blur-sm border border-border hover:bg-secondary transition-colors active:scale-95 shadow-sm">
+          {isImmersive ? <Minimize2 className="w-4 h-4 text-foreground" /> : <Maximize2 className="w-4 h-4 text-foreground" />}
         </button>
       </div>
 
       {/* Scale indicator */}
-      <div className="absolute bottom-3 left-3 z-20 px-2 py-1 rounded-md bg-background/80 backdrop-blur-sm border border-border text-xs text-muted-foreground tabular-nums">
+      <div className="absolute bottom-3 left-3 z-20 px-2.5 py-1 rounded-full bg-background/88 backdrop-blur-sm border border-border text-xs text-muted-foreground tabular-nums sm:bottom-4 sm:left-4">
         {scalePercent}%
       </div>
 
@@ -203,7 +281,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       <div
         ref={containerRef}
         className="relative w-full h-full overflow-hidden touch-none"
-        style={{ minHeight: "500px", cursor: isDragging ? "grabbing" : "grab" }}
+        style={{ minHeight: "100%", cursor: isDragging ? "grabbing" : "grab" }}
         onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -222,7 +300,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
             minHeight: "100%",
           }}
         >
-          <div className="flex justify-center py-8 px-6">
+          <div className="flex justify-center px-4 py-5 sm:px-6 sm:py-8">
             {children}
           </div>
         </div>

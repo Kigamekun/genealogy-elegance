@@ -171,12 +171,12 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 glass-card border-b border-border/50">
-        <div className="container flex items-center justify-between h-14 px-4 sm:px-6">
+        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-2">
           <div className="flex items-center gap-2.5">
             <TreePine className="w-5 h-5 text-primary" />
             <h1 className="font-display text-lg text-foreground leading-none">Silsilah Keluarga</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <input
               ref={importInputRef}
               type="file"
@@ -186,15 +186,15 @@ const Index = () => {
             />
             <Button size="sm" variant="outline" onClick={() => importInputRef.current?.click()} className="gap-1.5">
               <Upload className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Import JSON</span>
+              <span className="hidden sm:inline">Import JSON</span>
             </Button>
             <Button size="sm" variant="outline" onClick={handleExportJson} className="gap-1.5">
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Export JSON</span>
+              <span className="hidden sm:inline">Export JSON</span>
             </Button>
             <Button size="sm" variant="outline" onClick={() => startAddMember({ asFamilyHead: true, relationHint: "head" })} className="gap-1.5">
               <TreePine className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Kepala Baru</span>
+              <span className="hidden sm:inline">Kepala Baru</span>
             </Button>
             <Button size="sm" onClick={() => startAddMember({ relationHint: "member" })} className="gap-1.5">
               <Plus className="w-3.5 h-3.5" />
@@ -204,7 +204,7 @@ const Index = () => {
         </div>
       </header>
 
-      <section className="container px-4 sm:px-6 pt-10 pb-6 text-center animate-reveal-up">
+      <section className="mx-auto w-full max-w-[1200px] px-4 pt-6 pb-5 text-center animate-reveal-up sm:px-6 sm:pt-8 sm:pb-6">
         <h2 className="font-display text-3xl sm:text-4xl text-foreground leading-tight mb-3 mx-auto" style={{ lineHeight: "1.15" }}>
           Jelajahi Akar Keluarga Anda
         </h2>
@@ -213,7 +213,7 @@ const Index = () => {
         </p>
       </section>
 
-      <section className="container px-4 sm:px-6 pb-6 animate-reveal-up flex flex-col items-center gap-4" style={{ animationDelay: "100ms" }}>
+      <section className="mx-auto flex w-full max-w-[1200px] flex-col items-center gap-4 px-4 pb-5 animate-reveal-up sm:px-6 sm:pb-6" style={{ animationDelay: "100ms" }}>
         <SearchBar
           query={searchQuery}
           onQueryChange={setSearchQuery}
@@ -235,9 +235,9 @@ const Index = () => {
         </div>
       </section>
 
-      <section className="container px-4 sm:px-6 pb-16">
+      <section className="w-full px-2 pb-4 sm:px-4 sm:pb-8 lg:px-6">
         {isSearching ? (
-          <div className="animate-reveal-up">
+          <div className="animate-reveal-up mx-auto max-w-[1200px]">
             <p className="text-sm text-muted-foreground mb-4 text-center">{filteredMembers.length} hasil ditemukan</p>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 max-w-3xl mx-auto">
               {filteredMembers.map((member, i) => (
@@ -267,7 +267,7 @@ const Index = () => {
             </div>
           </div>
         ) : (
-          <div className="animate-reveal-up" style={{ animationDelay: "200ms" }}>
+          <div className="animate-reveal-up w-full" style={{ animationDelay: "200ms" }}>
             <ZoomableCanvas>
               <FamilyCanvasGraph
                 members={members}
