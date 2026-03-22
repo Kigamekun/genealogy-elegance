@@ -1135,13 +1135,13 @@ export function FamilyCanvasGraph({
               >
                 <Heart className="mx-auto h-3.5 w-3.5" />
               </ActionButton>
-              <ActionButton
+              {/* <ActionButton
                 title="Sambungkan orang tua"
                 active={connectState?.sourceId === member.id}
                 onClick={() => setConnectState({ sourceId: member.id })}
               >
                 <UsersRound className="mx-auto h-3.5 w-3.5" />
-              </ActionButton>
+              </ActionButton> */}
             </div>
 
             <div
@@ -1154,13 +1154,13 @@ export function FamilyCanvasGraph({
               <ActionButton title="Tambah anak" onClick={() => onAddChild(member.id)}>
                 <UserPlus className="mx-auto h-3.5 w-3.5" />
               </ActionButton>
-              <ActionButton
+              {/* <ActionButton
                 title={member.isFamilyHead ? "Lepas kepala keluarga" : "Jadikan kepala keluarga"}
                 active={member.isFamilyHead}
                 onClick={() => onSetFamilyHead(member.id, !member.isFamilyHead)}
               >
                 <Crown className="mx-auto h-3.5 w-3.5" />
-              </ActionButton>
+              </ActionButton> */}
               <ActionButton
                 title="Hapus anggota"
                 className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
