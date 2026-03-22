@@ -453,9 +453,7 @@ export function MemberForm({
             <div className="rounded-2xl border border-border/60 bg-background/60 p-4 space-y-3">
               <div>
                 <p className="text-sm font-medium text-foreground">Relasi Anak</p>
-                <p className="text-[11px] text-muted-foreground">
-                  Centang jika anak ini adalah anak sambung untuk {stepChildOption.stepParentName}. Layout keluarga tetap sama, hanya jalur anak ini yang akan berwarna oranye.
-                </p>
+                
               </div>
               <label className="flex items-start gap-3 rounded-xl border border-border/50 bg-background/70 p-3 cursor-pointer">
                 <input

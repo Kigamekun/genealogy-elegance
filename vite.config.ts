@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
 const DEV_SITE_URL = "http://localhost:8080";
-const META_IMAGE_PATH = "logo-safari.png";
+const META_IMAGE_PATH = "og-safari-family.jpg";
 
 const normalizeSiteUrl = (value: string) => {
   if (!value) {
