@@ -24,6 +24,17 @@ interface MemberFormProps {
 
 const MAX_IMAGE_SIZE_MB = 1.5;
 
+function formatBirthDateLabel(value: string): string {
+  if (!value) return "Pilih tanggal lahir";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Pilih tanggal lahir";
+  return parsed.toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export function MemberForm({
   member,
   title,
@@ -174,16 +185,22 @@ export function MemberForm({
             <label htmlFor="member-birthdate" className="text-xs font-medium text-muted-foreground mb-1 block">
               Tanggal Lahir *
             </label>
-            <div className="relative">
+            <div className="relative min-w-0 overflow-hidden rounded-lg">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none flex h-12 w-full items-center gap-3 rounded-lg border border-input bg-background px-3 text-sm text-foreground sm:text-base"
+              >
+                <span className="min-w-0 flex-1 truncate">{formatBirthDateLabel(birthDate)}</span>
+                <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </div>
               <Input
                 id="member-birthdate"
                 type="date"
                 value={birthDate}
                 onChange={(e) => setBirthDate(e.target.value)}
                 required
-                className="pr-10"
+                className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full"
               />
-              <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
           </div>
 
