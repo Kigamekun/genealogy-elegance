@@ -129,6 +129,7 @@ const PAIR_LANE_GAP = 24;
 const CHILD_CONNECTOR_OFFSET = 24;
 const ADOPTED_CHILD_STROKE = "hsl(28 92% 54% / 0.96)";
 const FAMILY_BLOCK_CLEARANCE = 72;
+const CARD_BLOCK_CLEARANCE = UNIT_GAP;
 
 function formatLifeRange(member: FamilyMember): string {
   const birthDate = formatFamilyDate(member.birthDate);
@@ -1046,6 +1047,54 @@ function FamilyCanvasGraphComponent({
       }
 
       if (!shiftedAnyFamily) break;
+    }
+
+    for (let iteration = 0; iteration < Math.max(12, members.length * 2); iteration += 1) {
+      const cardBlocksByGeneration = new Map<number, Map<string, { id: string; minX: number; maxX: number }>>();
+
+      shiftedUnitsById.forEach((unit) => {
+        const ownerUnitId = draftById.get(unit.id)?.sourceUnitId ?? unit.id;
+        if (!cardBlocksByGeneration.has(unit.generation)) {
+          cardBlocksByGeneration.set(unit.generation, new Map());
+        }
+
+        const generationBlocks = cardBlocksByGeneration.get(unit.generation)!;
+        const existingBlock = generationBlocks.get(ownerUnitId);
+        const nextMinX = unit.x;
+        const nextMaxX = unit.x + unit.width;
+
+        if (!existingBlock) {
+          generationBlocks.set(ownerUnitId, {
+            id: ownerUnitId,
+            minX: nextMinX,
+            maxX: nextMaxX,
+          });
+          return;
+        }
+
+        generationBlocks.set(ownerUnitId, {
+          id: ownerUnitId,
+          minX: Math.min(existingBlock.minX, nextMinX),
+          maxX: Math.max(existingBlock.maxX, nextMaxX),
+        });
+      });
+
+      let shiftedAnyUnit = false;
+
+      for (const generationBlocks of cardBlocksByGeneration.values()) {
+        const blockShifts = resolveNonOverlappingSpanShifts(
+          Array.from(generationBlocks.values()),
+          CARD_BLOCK_CLEARANCE,
+        );
+        const nextShift = Array.from(blockShifts.entries()).find(([, deltaX]) => deltaX > 0.5);
+        if (!nextShift) continue;
+
+        shiftUnitSubtree(nextShift[0], nextShift[1]);
+        shiftedAnyUnit = true;
+        break;
+      }
+
+      if (!shiftedAnyUnit) break;
     }
 
     const parentGroupsSeed = buildPendingParentGroups(shiftedPositions);

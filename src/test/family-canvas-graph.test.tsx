@@ -80,6 +80,23 @@ function getCardTopY(name: string): number {
   return parseFloat(card.style.top) - 24;
 }
 
+function getCardRects() {
+  return Array.from(document.querySelectorAll("div.absolute.group")).map((card, index) => {
+    const element = card as HTMLElement;
+    const left = parseFloat(element.style.left);
+    const top = parseFloat(element.style.top);
+
+    return {
+      index,
+      left,
+      top,
+      right: left + 260,
+      bottom: top + 136,
+      text: element.textContent ?? `card-${index}`,
+    };
+  });
+}
+
 function hasConnectorEndpoint(x: number, y: number): boolean {
   const connectorSvg = document.querySelector("svg.absolute.inset-0");
   if (!(connectorSvg instanceof SVGElement)) {
@@ -249,6 +266,82 @@ describe("FamilyCanvasGraph layout", () => {
         (path) => path.getAttribute("stroke") === "hsl(28 92% 54% / 0.96)",
       );
       expect(stepConnector).not.toBeUndefined();
+    });
+  });
+
+  it("keeps production-like family branches from overlapping cards when wide subtrees are separated", () => {
+    withGraph([
+      member({ id: "root-a", name: "Ahmad Safari", gender: "male", birthDate: "1928-01-01", generation: 1, spouseIds: ["root-b"] }),
+      member({ id: "root-b", name: "Saribanon", gender: "female", birthDate: "1933-01-01", generation: 1, spouseIds: ["root-a"] }),
+
+      member({ id: "sjafrudin", name: "Sjafrudin", gender: "male", birthDate: "1952-06-02", generation: 2, parentIds: ["root-a", "root-b"], spouseIds: ["aminah"] }),
+      member({ id: "aminah", name: "Siti Aminah", gender: "female", birthDate: "1964-03-22", generation: 2, spouseIds: ["sjafrudin"] }),
+      member({ id: "rifai", name: "D Ahmad Rifai", gender: "male", birthDate: "1947-06-26", generation: 2, parentIds: ["root-a", "root-b"], spouseIds: ["yatti"] }),
+      member({ id: "yatti", name: "R Yatti Rochayati", gender: "female", birthDate: "1955-06-28", generation: 2, spouseIds: ["rifai"] }),
+      member({ id: "obay", name: "Obay Sobari", gender: "male", birthDate: "1952-11-01", generation: 2, parentIds: ["root-a", "root-b"], spouseIds: ["yeti", "hasanah"] }),
+      member({ id: "yeti", name: "Yeti", gender: "female", birthDate: "1959-01-01", generation: 2, spouseIds: ["obay"] }),
+      member({ id: "hasanah", name: "Hasanah", gender: "female", birthDate: "1957-01-01", generation: 2, spouseIds: ["obay"] }),
+
+      member({ id: "syahrullah", name: "Syahrullah Harits", gender: "male", birthDate: "1979-06-22", generation: 3, parentIds: ["sjafrudin", "aminah"], spouseIds: ["awit"] }),
+      member({ id: "awit", name: "awit r.u", gender: "female", birthDate: "1983-03-22", generation: 3, spouseIds: ["syahrullah"] }),
+      member({ id: "harun", name: "Harun Arrasyid", gender: "male", birthDate: "1980-11-19", generation: 3, parentIds: ["sjafrudin", "aminah"], spouseIds: ["novi", "pipit", "rahmadania"] }),
+      member({ id: "novi", name: "Novi Indrianti", gender: "female", birthDate: "1982-01-01", generation: 3, spouseIds: ["harun"] }),
+      member({ id: "pipit", name: "Pipit yulianti", gender: "female", birthDate: "1985-03-22", generation: 3, spouseIds: ["harun"] }),
+      member({ id: "rahmadania", name: "Siti Rahmadaniawati", gender: "female", birthDate: "1989-03-22", generation: 3, spouseIds: ["harun"] }),
+      member({ id: "rifki", name: "Rifki Aditya", gender: "male", birthDate: "1990-01-01", generation: 3, parentIds: ["sjafrudin", "aminah"] }),
+      member({ id: "afifah", name: "Afifah Levita", gender: "female", birthDate: "1992-01-01", generation: 3, parentIds: ["sjafrudin", "aminah"] }),
+      member({ id: "salam", name: "Salam Aulia", gender: "male", birthDate: "1994-01-01", generation: 3, parentIds: ["sjafrudin", "aminah"], spouseIds: ["suci"] }),
+      member({ id: "suci", name: "Suci", gender: "female", birthDate: "1995-01-01", generation: 3, spouseIds: ["salam"] }),
+      member({ id: "irania", name: "Irania Israni", gender: "female", birthDate: "1996-01-01", generation: 3, parentIds: ["sjafrudin", "aminah"], spouseIds: ["dino"] }),
+      member({ id: "dino", name: "Dino Covic", gender: "male", birthDate: "1990-01-01", generation: 3, spouseIds: ["irania"] }),
+
+      member({ id: "restiadi", name: "D Restiadi", gender: "male", birthDate: "1975-08-05", generation: 3, parentIds: ["rifai", "yatti"], spouseIds: ["vira"] }),
+      member({ id: "vira", name: "Vira", gender: "female", birthDate: "1975-09-22", generation: 3, spouseIds: ["restiadi"] }),
+      member({ id: "desy", name: "Desy Restiani", gender: "female", birthDate: "1977-01-01", generation: 3, parentIds: ["rifai", "yatti"], spouseIds: ["danan"] }),
+      member({ id: "danan", name: "Danan Wuryanto", gender: "male", birthDate: "1973-01-01", generation: 3, spouseIds: ["desy"] }),
+      member({ id: "restianti", name: "D Restianti", gender: "female", birthDate: "1979-01-01", generation: 3, parentIds: ["rifai", "yatti"], spouseIds: ["rio"] }),
+      member({ id: "rio", name: "Rio Historiawan", gender: "male", birthDate: "1975-01-01", generation: 3, spouseIds: ["restianti"] }),
+      member({ id: "dekie", name: "Dekie Restiandi", gender: "male", birthDate: "1981-11-23", generation: 3, parentIds: ["rifai", "yatti"], spouseIds: ["disty"] }),
+      member({ id: "disty", name: "Disty Natarriny", gender: "female", birthDate: "1980-06-27", generation: 3, spouseIds: ["dekie"] }),
+
+      member({ id: "ade", name: "ADE Ridwan", gender: "male", birthDate: "1979-01-01", generation: 3, parentIds: ["obay", "hasanah"], spouseIds: ["yati-f", "pipin-b"] }),
+      member({ id: "yati-f", name: "Yati fatmayati", gender: "female", birthDate: "1971-03-22", generation: 3, spouseIds: ["ade"] }),
+      member({ id: "pipin-b", name: "Pipin burangrang", gender: "female", birthDate: "1973-03-22", generation: 3, spouseIds: ["ade"] }),
+      member({ id: "yuliaswati", name: "YULIASWATI", gender: "female", birthDate: "1984-01-01", generation: 3, parentIds: ["obay", "hasanah"] }),
+      member({ id: "dani", name: "DANI RAMDANI", gender: "male", birthDate: "1984-01-01", generation: 3, parentIds: ["obay", "yeti"] }),
+      member({ id: "wahyu", name: "WAHYUNINGSIH", gender: "female", birthDate: "1985-01-01", generation: 3, parentIds: ["obay", "yeti"] }),
+      member({ id: "rarah", name: "RARAH", gender: "female", birthDate: "1986-01-01", generation: 3, parentIds: ["obay", "yeti"] }),
+      member({ id: "safei", name: "MOH SAFEI", gender: "male", birthDate: "1987-01-01", generation: 3, parentIds: ["obay", "yeti"] }),
+
+      member({ id: "reksa", name: "Reksa Prayoga S", gender: "male", birthDate: "2004-12-10", generation: 4, parentIds: ["syahrullah", "awit"] }),
+      member({ id: "callysta", name: "callysta p.u", gender: "female", birthDate: "2011-03-22", generation: 4, parentIds: ["syahrullah", "awit"] }),
+      member({ id: "cheryl", name: "Cheryl a.u", gender: "female", birthDate: "2015-03-22", generation: 4, parentIds: ["syahrullah", "awit"] }),
+      member({ id: "fakhri", name: "Muhammad Fakhri", gender: "male", birthDate: "2013-10-04", generation: 4, parentIds: ["dekie", "disty"] }),
+      member({ id: "muh", name: "Muh refaldi", gender: "male", birthDate: "2000-12-10", generation: 4, parentIds: ["ade", "yati-f"] }),
+      member({ id: "riyad", name: "Riyad mahdi", gender: "male", birthDate: "2002-12-29", generation: 4, parentIds: ["ade", "yati-f"] }),
+      member({ id: "nugy", name: "Nugy wahyu", gender: "male", birthDate: "2004-12-25", generation: 4, parentIds: ["ade", "yati-f"] }),
+      member({ id: "zilbran", name: "Zilbran alfarizi", gender: "male", birthDate: "2011-05-01", generation: 4, parentIds: ["ade", "yati-f"] }),
+      member({ id: "agung", name: "Agung anugrah", gender: "male", birthDate: "2015-03-22", generation: 4, parentIds: ["ade", "pipin-b"] }),
+      member({ id: "ainun", name: "Ainun Nur azizah", gender: "female", birthDate: "2015-03-22", generation: 4, parentIds: ["ade", "pipin-b"] }),
+      member({ id: "aini", name: "Aini aflansa", gender: "female", birthDate: "2015-03-22", generation: 4, parentIds: ["ade", "pipin-b"] }),
+      member({ id: "arras", name: "Arras Ardian", gender: "male", birthDate: "2008-01-01", generation: 4, parentIds: ["harun", "pipit"] }),
+      member({ id: "shevonny", name: "Shevonny Raiqa", gender: "female", birthDate: "2009-01-01", generation: 4, parentIds: ["harun", "pipit"] }),
+      member({ id: "alisya", name: "Alisya Livi", gender: "female", birthDate: "2016-03-22", generation: 4, parentIds: ["harun", "rahmadania"] }),
+      member({ id: "reysheva", name: "Reysheva Alfarizky", gender: "female", birthDate: "2010-01-01", generation: 4, parentIds: ["harun", "novi"] }),
+      member({ id: "azam", name: "Khoerul Azam", gender: "male", birthDate: "2012-01-01", generation: 4, parentIds: ["harun", "novi"] }),
+    ], () => {
+      const rects = getCardRects();
+
+      rects.forEach((leftRect, leftIndex) => {
+        rects.slice(leftIndex + 1).forEach((rightRect) => {
+          const intersects = leftRect.left < rightRect.right
+            && leftRect.right > rightRect.left
+            && leftRect.top < rightRect.bottom
+            && leftRect.bottom > rightRect.top;
+
+          expect(intersects, `${leftRect.text} overlaps ${rightRect.text}`).toBe(false);
+        });
+      });
     });
   });
 
