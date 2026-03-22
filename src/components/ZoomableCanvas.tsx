@@ -20,10 +20,12 @@ interface DragState {
   originY: number;
 }
 
-const MIN_SCALE = 0.35;
+const MIN_SCALE = 0.2;
 const MAX_SCALE = 2.8;
 const BUTTON_ZOOM_FACTOR = 1.16;
 const WHEEL_ZOOM_INTENSITY = 0.0022;
+const FIT_PADDING_DESKTOP = 28;
+const FIT_PADDING_MOBILE = 14;
 
 function shouldIgnorePanTarget(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
@@ -48,7 +50,9 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     originY: 0,
   });
   const frameRef = useRef<number | null>(null);
+  const fitFrameRef = useRef<number | null>(null);
   const needsScaleUpdateRef = useRef(false);
+  const userInteractedRef = useRef(false);
 
   const applyTransform = useCallback(() => {
     if (!contentRef.current) return;
@@ -75,6 +79,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     applyTransform();
     return () => {
       if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
+      if (fitFrameRef.current !== null) window.cancelAnimationFrame(fitFrameRef.current);
     };
   }, [applyTransform]);
 
@@ -112,6 +117,35 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
 
   const clampScale = useCallback((scale: number) => Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale)), []);
 
+  const fitToView = useCallback(() => {
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return;
+
+    const isMobileViewport = window.matchMedia("(max-width: 767px)").matches;
+    const fitPadding = isMobileViewport ? FIT_PADDING_MOBILE : FIT_PADDING_DESKTOP;
+    const contentWidth = Math.max(content.scrollWidth, 1);
+    const contentHeight = Math.max(content.scrollHeight, 1);
+    const availableWidth = Math.max(container.clientWidth - fitPadding * 2, 1);
+    const availableHeight = Math.max(container.clientHeight - fitPadding * 2, 1);
+    const nextScale = clampScale(Math.min(availableWidth / contentWidth, availableHeight / contentHeight, 1));
+
+    transformRef.current = {
+      scale: nextScale,
+      x: Math.round((container.clientWidth - contentWidth * nextScale) / 2),
+      y: Math.round((container.clientHeight - contentHeight * nextScale) / 2),
+    };
+    scheduleRender(true);
+  }, [clampScale, scheduleRender]);
+
+  const scheduleFitToView = useCallback(() => {
+    if (fitFrameRef.current !== null) window.cancelAnimationFrame(fitFrameRef.current);
+    fitFrameRef.current = window.requestAnimationFrame(() => {
+      fitFrameRef.current = null;
+      fitToView();
+    });
+  }, [fitToView]);
+
   const zoomAtClientPoint = useCallback((nextScale: number, clientX: number, clientY: number) => {
     const container = containerRef.current;
     if (!container) return;
@@ -138,6 +172,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     const container = containerRef.current;
     if (!container) return;
 
+    userInteractedRef.current = true;
     const rect = container.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
@@ -148,8 +183,8 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
   const zoomIn = () => zoomByFactor(BUTTON_ZOOM_FACTOR);
   const zoomOut = () => zoomByFactor(1 / BUTTON_ZOOM_FACTOR);
   const resetView = () => {
-    transformRef.current = { x: 0, y: 0, scale: 1 };
-    scheduleRender(true);
+    userInteractedRef.current = false;
+    scheduleFitToView();
   };
   const isImmersive = isNativeFullscreen || isFallbackFullscreen;
 
@@ -166,9 +201,17 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       return;
     }
 
+    const prefersFallbackFullscreen = window.matchMedia("(max-width: 767px)").matches;
+    if (prefersFallbackFullscreen) {
+      userInteractedRef.current = false;
+      setIsFallbackFullscreen(true);
+      return;
+    }
+
     const wrapper = wrapperRef.current;
     if (wrapper?.requestFullscreen) {
       try {
+        userInteractedRef.current = false;
         await wrapper.requestFullscreen();
         return;
       } catch {
@@ -176,11 +219,35 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       }
     }
 
+    userInteractedRef.current = false;
     setIsFallbackFullscreen(true);
   }, [isFallbackFullscreen]);
 
+  useEffect(() => {
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return undefined;
+
+    const observer = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => {
+          if (!userInteractedRef.current || isImmersive) {
+            scheduleFitToView();
+          }
+        })
+      : null;
+
+    observer?.observe(container);
+    observer?.observe(content);
+    scheduleFitToView();
+
+    return () => {
+      observer?.disconnect();
+    };
+  }, [isImmersive, scheduleFitToView]);
+
   const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
+    userInteractedRef.current = true;
     const zoomFactor = Math.exp(-e.deltaY * (e.ctrlKey ? 0.005 : WHEEL_ZOOM_INTENSITY));
     const nextScale = clampScale(transformRef.current.scale * zoomFactor);
     if (Math.abs(nextScale - transformRef.current.scale) < 0.0001) return;
@@ -197,6 +264,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     if (!container) return;
 
     container.setPointerCapture(e.pointerId);
+    userInteractedRef.current = true;
     dragRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
@@ -253,11 +321,17 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       )}
       style={{
         height: isImmersive ? "100dvh" : "min(100dvh - 12rem, 920px)",
-        minHeight: isImmersive ? "100dvh" : "clamp(520px, 76dvh, 920px)",
+        minHeight: isImmersive ? "100dvh" : "clamp(460px, 72dvh, 920px)",
       }}
     >
       {/* Zoom controls */}
-      <div className="absolute top-3 right-3 z-20 flex flex-col gap-1.5 sm:top-4 sm:right-4">
+      <div
+        className="absolute z-20 flex flex-col gap-1.5 sm:top-4 sm:right-4"
+        style={{
+          top: isImmersive ? "calc(env(safe-area-inset-top) + 12px)" : "12px",
+          right: isImmersive ? "calc(env(safe-area-inset-right) + 12px)" : "12px",
+        }}
+      >
         <button onClick={zoomIn} title="Perbesar" className="p-2.5 rounded-2xl bg-background/88 backdrop-blur-sm border border-border hover:bg-secondary transition-colors active:scale-95 shadow-sm">
           <ZoomIn className="w-4 h-4 text-foreground" />
         </button>
@@ -273,7 +347,13 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       </div>
 
       {/* Scale indicator */}
-      <div className="absolute bottom-3 left-3 z-20 px-2.5 py-1 rounded-full bg-background/88 backdrop-blur-sm border border-border text-xs text-muted-foreground tabular-nums sm:bottom-4 sm:left-4">
+      <div
+        className="absolute z-20 px-2.5 py-1 rounded-full bg-background/88 backdrop-blur-sm border border-border text-xs text-muted-foreground tabular-nums"
+        style={{
+          bottom: isImmersive ? "calc(env(safe-area-inset-bottom) + 12px)" : "12px",
+          left: isImmersive ? "calc(env(safe-area-inset-left) + 12px)" : "12px",
+        }}
+      >
         {scalePercent}%
       </div>
 

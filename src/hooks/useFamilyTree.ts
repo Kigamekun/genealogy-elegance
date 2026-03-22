@@ -24,7 +24,7 @@ function toTime(dateString: string): number {
   return Number.isNaN(value) ? 0 : value;
 }
 
-const STORAGE_KEY = "genealogy-elegance.members.v2";
+const STORAGE_KEY = "genealogy-elegance.members.v3";
 
 function loadMembersFromStorage(): FamilyMember[] {
   if (typeof window === "undefined") return getInitialMembers();

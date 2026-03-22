@@ -960,7 +960,7 @@ export function FamilyCanvasGraph({
     <div
       ref={canvasRef}
       className="relative"
-      style={{ width: Math.max(layout.width, 980), height: Math.max(layout.height, 560) }}
+      style={{ width: Math.max(layout.width, CARD_WIDTH + PADDING_X * 2), height: Math.max(layout.height, 420) }}
       onClick={(e) => {
         if (e.target !== e.currentTarget) return;
         cancelConnectMode();
@@ -1063,8 +1063,11 @@ export function FamilyCanvasGraph({
                     ? "border-sky-200 bg-sky-50 text-sky-600"
                     : "border-pink-200 bg-pink-50 text-pink-600",
                 )}
+                aria-label={member.gender === "male" ? "Laki-laki" : "Perempuan"}
               >
-                <span className="text-sm font-semibold leading-none">{member.gender === "male" ? "♂" : "♀"}</span>
+                <span className="block -translate-y-px text-[17px] font-semibold leading-none">
+                  {member.gender === "male" ? "♂" : "♀"}
+                </span>
               </span>
               <div className="flex h-full flex-col">
                 <div className="flex items-center gap-3.5">

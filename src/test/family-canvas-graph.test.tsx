@@ -181,8 +181,8 @@ describe("FamilyCanvasGraph layout", () => {
     ], () => {
       expect(document.body.textContent).not.toContain("Kakek");
       expect(document.body.textContent).not.toContain("Nenek");
-      expect(document.body.textContent).toContain("♂");
-      expect(document.body.textContent).toContain("♀");
+      expect(document.querySelector('[aria-label="Laki-laki"]')).not.toBeNull();
+      expect(document.querySelector('[aria-label="Perempuan"]')).not.toBeNull();
     });
   });
 
