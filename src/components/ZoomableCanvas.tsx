@@ -250,6 +250,14 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     if (hadTouchDrag) setIsDragging(false);
   }, []);
 
+  useEffect(() => {
+    pinchRef.current = null;
+    dragRef.current.pointerId = null;
+    clearTouchDrag();
+    userInteractedRef.current = false;
+    scheduleFitToView();
+  }, [clearTouchDrag, isFallbackFullscreen, scheduleFitToView]);
+
   const zoomAtClientPoint = useCallback((nextScale: number, clientX: number, clientY: number) => {
     const container = containerRef.current;
     if (!container) return;
@@ -523,7 +531,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       container.removeEventListener("touchend", handleNativeTouchEnd, options);
       container.removeEventListener("touchcancel", handleNativeTouchCancel, options);
     };
-  }, [handleNativeTouchCancel, handleNativeTouchEnd, handleNativeTouchMove, handleNativeTouchStart]);
+  }, [handleNativeTouchCancel, handleNativeTouchEnd, handleNativeTouchMove, handleNativeTouchStart, isFallbackFullscreen]);
 
   const canvas = (
     <div

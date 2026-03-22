@@ -50,9 +50,9 @@ export function MemberDetailModal({ member, onClose, onEdit, onDelete }: MemberD
         </div>
 
         <div className="space-y-3 mb-6">
-          <div className="flex items-center gap-2 text-sm">
-            <Calendar className="w-4 h-4 text-muted-foreground" />
-            <span className="text-foreground">
+          <div className="flex items-start gap-2 text-sm">
+            <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 break-words leading-relaxed text-foreground">
               {new Date(member.birthDate).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
               {isDeceased && (
                 <span className="text-muted-foreground">

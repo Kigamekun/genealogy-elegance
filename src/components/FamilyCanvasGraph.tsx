@@ -103,6 +103,12 @@ function parseYear(dateString?: string): string {
   return Number.isNaN(year) ? "----" : year.toString();
 }
 
+function formatYearRange(member: FamilyMember): string {
+  const birthYear = parseYear(member.birthDate);
+  const deathYear = member.deathDate ? parseYear(member.deathDate) : "";
+  return deathYear ? `${birthYear} - ${deathYear}` : birthYear;
+}
+
 function average(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -1098,10 +1104,9 @@ export function FamilyCanvasGraph({
                 </div>
 
                 <div className="mt-auto space-y-2">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Calendar className="h-3.5 w-3.5" />
-                    <span>{parseYear(member.birthDate)}</span>
-                    {member.deathDate && <span>– {parseYear(member.deathDate)}</span>}
+                  <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground sm:text-xs">
+                    <Calendar className="h-3.5 w-3.5 shrink-0" />
+                    <span className="min-w-0 truncate tabular-nums">{formatYearRange(member)}</span>
                   </div>
 
                   {spouses.length > 0 && (
