@@ -34,7 +34,7 @@ describe("AppErrorBoundary", () => {
       try {
         expect(document.body.textContent).toContain("Halaman berhasil diamankan");
         expect(document.body.textContent).toContain("Ada error tak terduga, silakan muat ulang aja.");
-        expect(document.body.textContent).toContain("Muat Ulang Bersih");
+        expect(document.body.textContent).toContain("Hard Refresh Bersih");
       } finally {
         cleanup();
       }

@@ -1,5 +1,6 @@
 import { memo, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Calendar, Crown, Heart, Pencil, Trash2, UserPlus, UsersRound, X } from "lucide-react";
+import { DeferredImage } from "@/components/DeferredImage";
 import { FamilyMember, getParentIds, getSpouseIds, getSpouseRelationStatus, getSpouses, getStepParentIds } from "@/lib/family-data";
 import { formatFamilyDate, getMemberAge, isMemberDeceased } from "@/lib/member-life";
 import { cn } from "@/lib/utils";
@@ -1219,12 +1220,26 @@ function FamilyCanvasGraphComponent({
               <div className="flex h-full flex-col">
                 <div className="flex items-center gap-3.5">
                   {member.avatarUrl ? (
-                    <img
+                    <DeferredImage
                       src={member.avatarUrl}
                       alt={member.name}
-                      className={cn(
-                        "h-12 w-12 rounded-full object-cover ring-2 ring-border",
+                      rootMargin="420px"
+                      containerClassName="h-12 w-12 shrink-0 rounded-full ring-2 ring-border"
+                      imageClassName={cn(
+                        "object-cover",
                         isDeceased && "grayscale-[0.35] opacity-90",
+                      )}
+                      placeholder={(
+                        <div className={cn(
+                          "flex h-full w-full items-center justify-center rounded-full text-sm font-semibold",
+                          isDeceased
+                            ? "bg-slate-200 text-slate-600"
+                            : member.gender === "male"
+                              ? "bg-primary/15 text-primary"
+                              : "bg-accent/15 text-accent",
+                        )}>
+                          {member.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}
+                        </div>
                       )}
                     />
                   ) : (

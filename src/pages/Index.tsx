@@ -5,6 +5,7 @@ import { MemberForm, type MemberFormValues } from "@/components/MemberForm";
 import { SearchBar } from "@/components/SearchBar";
 import { ZoomableCanvas } from "@/components/ZoomableCanvas";
 import { FamilyCanvasGraph } from "@/components/FamilyCanvasGraph";
+import { DeferredImage } from "@/components/DeferredImage";
 import { FamilyMember, getChildren, getSpouseIds, getSpouseRelations, hydrateMembers } from "@/lib/family-data";
 import { formatFamilyDate, getMemberAge, isMemberDeceased } from "@/lib/member-life";
 import { Cloud, CloudOff, Download, Plus, RefreshCw, TreePine, Upload, Users } from "lucide-react";
@@ -364,7 +365,20 @@ const Index = () => {
                 >
                   <div className="flex items-center gap-3">
                     {member.avatarUrl ? (
-                      <img src={member.avatarUrl} alt={member.name} className="w-10 h-10 rounded-full object-cover ring-2 ring-border" />
+                      <DeferredImage
+                        src={member.avatarUrl}
+                        alt={member.name}
+                        rootMargin="240px"
+                        containerClassName="h-10 w-10 shrink-0 rounded-full ring-2 ring-border"
+                        imageClassName="object-cover"
+                        placeholder={(
+                          <div className={`flex h-full w-full items-center justify-center rounded-full text-sm font-semibold ${
+                            member.gender === "male" ? "bg-primary/15 text-primary" : "bg-accent/15 text-accent"
+                          }`}>
+                            {member.name.split(" ").map((name) => name[0]).join("").slice(0, 2)}
+                          </div>
+                        )}
+                      />
                     ) : (
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold ${
                         member.gender === "male" ? "bg-primary/15 text-primary" : "bg-accent/15 text-accent"

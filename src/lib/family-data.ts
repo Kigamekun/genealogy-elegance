@@ -1,7 +1,7 @@
 import initialMembersData from "@/data/family-tree.initial.json";
 
 export type SpouseRelationStatus = "married" | "divorced";
-export const MAX_INLINE_AVATAR_URL_LENGTH = 300_000;
+export const MAX_INLINE_AVATAR_BYTES = 500 * 1024;
 
 export interface SpouseRelation {
   spouseId: string;
@@ -61,6 +61,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+export function estimateDataUrlBytes(value: string): number {
+  const trimmedValue = value.trim();
+  const commaIndex = trimmedValue.indexOf(",");
+  if (commaIndex === -1) return trimmedValue.length;
+
+  const metadata = trimmedValue.slice(0, commaIndex);
+  const payload = trimmedValue.slice(commaIndex + 1);
+
+  if (!/;base64/i.test(metadata)) {
+    try {
+      return new TextEncoder().encode(decodeURIComponent(payload)).length;
+    } catch {
+      return payload.length;
+    }
+  }
+
+  const sanitizedPayload = payload.replace(/\s/g, "");
+  const paddingLength = sanitizedPayload.endsWith("==")
+    ? 2
+    : sanitizedPayload.endsWith("=")
+      ? 1
+      : 0;
+
+  return Math.max(0, Math.floor((sanitizedPayload.length * 3) / 4) - paddingLength);
+}
+
 export function sanitizeAvatarUrl(value?: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
 
@@ -68,7 +94,7 @@ export function sanitizeAvatarUrl(value?: unknown): string | undefined {
   if (!trimmedValue) return undefined;
   if (!trimmedValue.startsWith("data:")) return trimmedValue;
 
-  return trimmedValue.length <= MAX_INLINE_AVATAR_URL_LENGTH ? trimmedValue : undefined;
+  return estimateDataUrlBytes(trimmedValue) <= MAX_INLINE_AVATAR_BYTES ? trimmedValue : undefined;
 }
 
 function coerceMember(raw: unknown): FamilyMember | null {

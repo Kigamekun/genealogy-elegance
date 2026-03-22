@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { DeferredImage } from "@/components/DeferredImage";
 import { useIsConstrainedMode } from "@/hooks/use-performance-mode";
 import { FamilyMember } from "@/lib/family-data";
 import { formatFamilyDate, getMemberAge, isMemberDeceased } from "@/lib/member-life";
@@ -54,7 +55,24 @@ export function MemberDetailModal({ member, onClose, onEdit, onDelete }: MemberD
 
         <div className="flex items-center gap-4 mb-5">
           {member.avatarUrl ? (
-            <img src={member.avatarUrl} alt={member.name} className={`w-20 h-20 rounded-full object-cover ring-2 ring-border ${isDeceased ? "grayscale-[0.35]" : ""}`} />
+            <DeferredImage
+              src={member.avatarUrl}
+              alt={member.name}
+              eager
+              containerClassName="h-20 w-20 shrink-0 rounded-full ring-2 ring-border"
+              imageClassName={cn("object-cover", isDeceased && "grayscale-[0.35]")}
+              placeholder={(
+                <div className={`flex h-full w-full items-center justify-center rounded-full text-2xl font-bold ${
+                  isDeceased
+                    ? "bg-slate-200 text-slate-600"
+                    : member.gender === "male"
+                      ? "bg-primary/15 text-primary"
+                      : "bg-accent/15 text-accent"
+                }`}>
+                  {member.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                </div>
+              )}
+            />
           ) : (
             <div className={`w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold ${
               isDeceased

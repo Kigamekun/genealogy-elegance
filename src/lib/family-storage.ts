@@ -8,6 +8,33 @@ export const FAMILY_TREE_STORAGE_KEYS = [
   ...LEGACY_FAMILY_TREE_STORAGE_KEYS,
 ] as const;
 
+async function clearIndexedDbDatabases() {
+  if (typeof window === "undefined" || !("indexedDB" in window)) return;
+
+  const indexedDbFactory = window.indexedDB as IDBFactory & {
+    databases?: () => Promise<Array<{ name?: string }>>;
+  };
+
+  if (typeof indexedDbFactory.databases !== "function") return;
+
+  try {
+    const databases = await indexedDbFactory.databases();
+    await Promise.all(
+      databases
+        .map((database) => database.name)
+        .filter((databaseName): databaseName is string => Boolean(databaseName))
+        .map((databaseName) => new Promise<void>((resolve) => {
+          const request = indexedDbFactory.deleteDatabase(databaseName);
+          request.onsuccess = () => resolve();
+          request.onerror = () => resolve();
+          request.onblocked = () => resolve();
+        })),
+    );
+  } catch {
+    // Ignore IndexedDB cleanup failures and continue the recovery flow.
+  }
+}
+
 export async function clearFamilyTreeBrowserCache() {
   if (typeof window === "undefined") return;
 
@@ -42,4 +69,6 @@ export async function clearFamilyTreeBrowserCache() {
       // Ignore service worker cleanup failures and continue the recovery flow.
     }
   }
+
+  await clearIndexedDbDatabases();
 }

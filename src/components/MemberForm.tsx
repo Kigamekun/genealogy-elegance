@@ -1,7 +1,13 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useIsConstrainedMode } from "@/hooks/use-performance-mode";
-import { FamilyMember, getSpouseRelations, type SpouseRelationStatus } from "@/lib/family-data";
+import {
+  FamilyMember,
+  MAX_INLINE_AVATAR_BYTES,
+  estimateDataUrlBytes,
+  getSpouseRelations,
+  type SpouseRelationStatus,
+} from "@/lib/family-data";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ImagePlus, Trash2, X } from "lucide-react";
@@ -32,12 +38,12 @@ interface MemberFormProps {
   onCancel: () => void;
 }
 
-const MAX_IMAGE_SIZE_MB = 1.5;
+const MAX_IMAGE_SIZE_BYTES = MAX_INLINE_AVATAR_BYTES;
 const MAX_AVATAR_DIMENSION = 768;
-const MAX_AVATAR_DATA_URL_LENGTH = 220_000;
 const MAX_AVATAR_COMPRESSION_ATTEMPTS = 4;
 const INITIAL_AVATAR_QUALITY = 0.82;
 const MIN_AVATAR_QUALITY = 0.52;
+const MAX_IMAGE_SIZE_LABEL = "500 KB";
 const MONTH_OPTIONS = [
   { value: "01", label: "Jan" },
   { value: "02", label: "Feb" },
@@ -107,7 +113,7 @@ function compressCanvas(canvas: HTMLCanvasElement) {
   let quality = INITIAL_AVATAR_QUALITY;
   let dataUrl = canvas.toDataURL("image/jpeg", quality);
 
-  while (dataUrl.length > MAX_AVATAR_DATA_URL_LENGTH && quality > MIN_AVATAR_QUALITY) {
+  while (estimateDataUrlBytes(dataUrl) > MAX_IMAGE_SIZE_BYTES && quality > MIN_AVATAR_QUALITY) {
     quality = Math.max(MIN_AVATAR_QUALITY, quality - 0.08);
     dataUrl = canvas.toDataURL("image/jpeg", quality);
   }
@@ -123,14 +129,14 @@ async function buildSafeAvatarDataUrl(file: File) {
     const canvas = renderAvatarCanvas(image, scale);
     const dataUrl = compressCanvas(canvas);
 
-    if (dataUrl.length <= MAX_AVATAR_DATA_URL_LENGTH) {
+    if (estimateDataUrlBytes(dataUrl) <= MAX_IMAGE_SIZE_BYTES) {
       return dataUrl;
     }
 
     scale *= 0.82;
   }
 
-  throw new Error("Foto terlalu besar untuk disimpan dengan aman. Coba pilih gambar yang lebih ringan.");
+  throw new Error(`Foto terlalu besar. Maksimal ${MAX_IMAGE_SIZE_LABEL} setelah diproses, kalau lebih akan saya abaikan.`);
 }
 
 function DateFieldGroup({
@@ -267,8 +273,8 @@ export function MemberForm({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
-      setAvatarError(`Ukuran gambar maksimal ${MAX_IMAGE_SIZE_MB} MB supaya aman disimpan di browser.`);
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      setAvatarError(`Ukuran gambar maksimal ${MAX_IMAGE_SIZE_LABEL}. Kalau lebih besar, fotonya tidak saya tampilkan supaya browser tetap aman.`);
       e.target.value = "";
       return;
     }
@@ -281,7 +287,7 @@ export function MemberForm({
       setAvatarError(
         error instanceof Error
           ? error.message
-          : "Foto terlalu besar untuk disimpan dengan aman. Coba pilih gambar yang lebih ringan.",
+          : `Foto terlalu besar. Maksimal ${MAX_IMAGE_SIZE_LABEL}, kalau lebih akan saya abaikan.`,
       );
     } finally {
       e.target.value = "";

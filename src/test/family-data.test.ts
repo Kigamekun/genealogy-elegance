@@ -101,7 +101,7 @@ describe("family-data relationships", () => {
         relation: "Anggota",
         description: "",
         generation: 1,
-        avatarUrl: `data:image/jpeg;base64,${"a".repeat(320_000)}`,
+        avatarUrl: `data:image/jpeg;base64,${"a".repeat(900_000)}`,
       },
     ]);
 

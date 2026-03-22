@@ -1,3 +1,4 @@
+import { DeferredImage } from "@/components/DeferredImage";
 import { FamilyMember, getSpouseRelationStatus } from "@/lib/family-data";
 import { formatFamilyDate, getMemberAge, isMemberDeceased } from "@/lib/member-life";
 import { Heart, Calendar, ChevronDown, ChevronRight, UserPlus } from "lucide-react";
@@ -17,10 +18,25 @@ function Avatar({ member }: { member: FamilyMember }) {
 
   if (member.avatarUrl) {
     return (
-      <img
+      <DeferredImage
         src={member.avatarUrl}
         alt={member.name}
-        className={`w-10 h-10 rounded-full object-cover shrink-0 ring-2 ring-border ${isDeceased ? "grayscale-[0.35]" : ""}`}
+        rootMargin="220px"
+        containerClassName="h-10 w-10 shrink-0 rounded-full ring-2 ring-border"
+        imageClassName={`object-cover ${isDeceased ? "grayscale-[0.35]" : ""}`}
+        placeholder={(
+          <div
+            className={`flex h-full w-full items-center justify-center rounded-full text-sm font-semibold shrink-0 ${
+              isDeceased
+                ? "bg-slate-200 text-slate-600"
+                : member.gender === "male"
+                  ? "bg-primary/15 text-primary"
+                  : "bg-accent/15 text-accent"
+            }`}
+          >
+            {member.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+          </div>
+        )}
       />
     );
   }

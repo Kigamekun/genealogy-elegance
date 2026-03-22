@@ -38,7 +38,8 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
 
       const nextUrl = new URL(window.location.href);
       nextUrl.searchParams.set("_recovery", Date.now().toString());
-      window.location.replace(nextUrl.toString());
+      nextUrl.searchParams.set("_hard", "1");
+      window.location.assign(nextUrl.toString());
     } catch (error) {
       console.error("Safari Family failed to clear local browser data during recovery.", error);
       window.location.reload();
@@ -61,7 +62,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
           <div className="mt-5 flex justify-center">
             <Button type="button" onClick={() => void this.handleReload()} className="gap-2" disabled={this.state.isReloading}>
               <RefreshCw className="h-4 w-4" />
-              {this.state.isReloading ? "Membersihkan Data..." : "Muat Ulang Bersih"}
+              {this.state.isReloading ? "Hard Refresh..." : "Hard Refresh Bersih"}
             </Button>
           </div>
         </div>
