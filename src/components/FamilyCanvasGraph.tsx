@@ -1067,7 +1067,7 @@ export function FamilyCanvasGraph({
 
             <div
               className={cn(
-                "absolute -bottom-11 z-20 flex items-center gap-2 rounded-full border border-border/70 bg-background/92 px-2 py-1.5 shadow-sm backdrop-blur transition-all duration-200",
+                "absolute -bottom-14 z-20 flex items-center gap-2 rounded-full border border-border/70 bg-background/92 px-2 py-1.5 shadow-sm backdrop-blur transition-all duration-200",
                 !isSelected && !isConnectingSource && "pointer-events-none opacity-0",
                 member.gender === "male" ? "left-6" : "right-6 flex-row-reverse",
               )}
