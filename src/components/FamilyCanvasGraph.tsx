@@ -95,6 +95,7 @@ const PADDING_Y = 86;
 const CORNER_RADIUS = 34;
 const PAIR_JOIN_OFFSET = 34;
 const PAIR_LANE_GAP = 24;
+const CHILD_CONNECTOR_OFFSET = 24;
 
 function parseYear(dateString?: string): string {
   if (!dateString) return "----";
@@ -236,7 +237,7 @@ function buildConnectorGeometry(source: Point, targets: Point[], busY: number): 
   const sortedTargets = [...targets].sort((left, right) => left.x - right.x);
   const minX = sortedTargets[0].x;
   const maxX = sortedTargets[sortedTargets.length - 1].x;
-  const hubX = Math.max(minX, Math.min(maxX, source.x));
+  const hubX = Math.max(minX, Math.min(maxX, average(sortedTargets.map((target) => target.x))));
   const leftMost = sortedTargets[0];
   const rightMost = sortedTargets[sortedTargets.length - 1];
   const innerTargets = sortedTargets.slice(1, -1);
@@ -823,7 +824,10 @@ export function FamilyCanvasGraph({
             const position = shiftedPositions.get(childId);
             if (!position) return null;
 
-            return getAnchors(position).top;
+            return {
+              x: position.x + CARD_WIDTH / 2,
+              y: position.y - CHILD_CONNECTOR_OFFSET,
+            };
           })
           .filter((target): target is Point => Boolean(target))
           .sort((left, right) => left.x - right.x)

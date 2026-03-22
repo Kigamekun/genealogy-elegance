@@ -75,7 +75,7 @@ function getCardTopY(name: string): number {
   const label = getTextNode(name);
   const card = label.closest("div.absolute.group") as HTMLElement | null;
   if (!card) throw new Error(`Card wrapper not found for ${name}`);
-  return parseFloat(card.style.top) - 1;
+  return parseFloat(card.style.top) - 24;
 }
 
 function hasConnectorEndpoint(x: number, y: number): boolean {
