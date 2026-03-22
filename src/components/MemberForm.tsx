@@ -295,9 +295,7 @@ export function MemberForm({
                   </label>
                   <Input id="avatar-upload" type="file" accept="image/*" onChange={handleAvatarChange} />
                 </div>
-                <p className="text-[11px] text-muted-foreground">
-                  Foto disimpan di browser agar tetap berjalan tanpa backend.
-                </p>
+                
                 {avatarUrl && (
                   <button
                     type="button"
@@ -411,9 +409,7 @@ export function MemberForm({
             <div className="rounded-2xl border border-border/60 bg-background/60 p-4 space-y-3">
               <div>
                 <p className="text-sm font-medium text-foreground">Status Hubungan</p>
-                <p className="text-[11px] text-muted-foreground">
-                  Jika dipilih cerai, garis pasangan akan tampil merah di kanvas.
-                </p>
+               
               </div>
               {relatedSpouses.map((spouse) => {
                 const currentStatus = spouseStatuses[spouse.id] ?? "married";
@@ -422,7 +418,6 @@ export function MemberForm({
                   <div key={spouse.id} className="flex flex-col gap-2 rounded-xl border border-border/50 bg-background/70 p-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-medium text-foreground">{spouse.name}</p>
-                      <p className="text-[11px] text-muted-foreground">Atur status relasi pasangan ini.</p>
                     </div>
                     <div className="grid grid-cols-2 gap-2 sm:min-w-[220px]">
                       <button
