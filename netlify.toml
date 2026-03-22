@@ -1,2 +1,7 @@
 [functions]
   directory = "netlify/functions"
+
+[[redirects]]
+  from = "/api/family-tree"
+  to = "/.netlify/functions/family-tree"
+  status = 200

@@ -1,6 +1,6 @@
 import { FamilyMember, hydrateMembers } from "@/lib/family-data";
 
-const CLOUD_ENDPOINT = "/api/family-tree";
+const CLOUD_ENDPOINTS = ["/api/family-tree", "/.netlify/functions/family-tree"] as const;
 
 export type FamilyTreeSyncStatus = "loading" | "local" | "saving" | "synced" | "error";
 
@@ -28,13 +28,43 @@ async function parseCloudPayload(response: Response): Promise<CloudPayload | nul
   }
 }
 
+async function fetchCloud(input: RequestInit & { method: "GET" | "PUT" }) {
+  let lastResponse: Response | null = null;
+
+  for (const endpoint of CLOUD_ENDPOINTS) {
+    try {
+      const response = await fetch(endpoint, {
+        ...input,
+        headers: {
+          Accept: "application/json",
+          ...(input.headers ?? {}),
+        },
+      });
+
+      if (response.status === 404) {
+        lastResponse = response;
+        continue;
+      }
+
+      return response;
+    } catch {
+      lastResponse = null;
+    }
+  }
+
+  return lastResponse;
+}
+
 export async function loadCloudMembers(): Promise<LoadCloudResult> {
   try {
-    const response = await fetch(CLOUD_ENDPOINT, {
+    const response = await fetchCloud({
       method: "GET",
-      headers: { Accept: "application/json" },
       cache: "no-store",
     });
+
+    if (!response) {
+      return { available: false, members: null, updatedAt: null };
+    }
 
     if (response.status === 404 || response.status === 405) {
       return { available: false, members: null, updatedAt: null };
@@ -58,14 +88,17 @@ export async function loadCloudMembers(): Promise<LoadCloudResult> {
 
 export async function saveCloudMembers(members: FamilyMember[]): Promise<SaveCloudResult> {
   try {
-    const response = await fetch(CLOUD_ENDPOINT, {
+    const response = await fetchCloud({
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        Accept: "application/json",
       },
       body: JSON.stringify({ members }),
     });
+
+    if (!response) {
+      return { available: false, updatedAt: null };
+    }
 
     if (response.status === 404 || response.status === 405) {
       return { available: false, updatedAt: null };

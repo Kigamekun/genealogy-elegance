@@ -1,5 +1,5 @@
 import type { Config, Handler } from "@netlify/functions";
-import { getStore } from "@netlify/blobs";
+import { connectLambda, getStore } from "@netlify/blobs";
 
 const STORE_NAME = "genealogy-elegance";
 const ENTRY_KEY = "family-tree";
@@ -21,6 +21,8 @@ function jsonResponse(body: unknown, statusCode = 200) {
 }
 
 export const handler: Handler = async (event) => {
+  connectLambda(event);
+
   const store = getStore({
     name: STORE_NAME,
     consistency: "strong",
