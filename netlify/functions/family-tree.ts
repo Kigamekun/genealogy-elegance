@@ -25,11 +25,10 @@ export const handler: Handler = async (event) => {
 
   const store = getStore({
     name: STORE_NAME,
-    consistency: "strong",
   });
 
   if (event.httpMethod === "GET") {
-    const payload = await store.get(ENTRY_KEY, { type: "json", consistency: "strong" }) as StoredFamilyTree | null;
+    const payload = await store.get(ENTRY_KEY, { type: "json" }) as StoredFamilyTree | null;
 
     return jsonResponse({
       members: Array.isArray(payload?.members) ? payload.members : null,
