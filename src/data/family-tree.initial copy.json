@@ -1,0 +1,115 @@
+[
+  {
+    "id": "1",
+    "name": "Ahmad Suryadi",
+    "birthDate": "1940-03-15",
+    "deathDate": "2015-08-20",
+    "gender": "male",
+    "relation": "Anggota Keluarga",
+    "description": "Pendiri keluarga besar Suryadi yang dikenal hangat, sabar, dan menjaga hubungan antar keluarga tetap erat.",
+    "avatarUrl": "/avatars/avatar-ahmad.jpg",
+    "generation": 1,
+    "isFamilyHead": true,
+    "spouseIds": ["2"]
+  },
+  {
+    "id": "2",
+    "name": "Siti Rahayu",
+    "birthDate": "1945-07-22",
+    "gender": "female",
+    "relation": "Anggota Keluarga",
+    "description": "Perajin batik yang menjadi pusat perhatian keluarga dan sangat dekat dengan anak-cucu.",
+    "avatarUrl": "/avatars/avatar-siti.jpg",
+    "generation": 1,
+    "spouseIds": ["1"]
+  },
+  {
+    "id": "3",
+    "name": "Budi Suryadi",
+    "birthDate": "1968-01-10",
+    "gender": "male",
+    "relation": "Anggota Keluarga",
+    "description": "Dokter spesialis yang rapi, tenang, dan sering menjadi penengah saat keluarga besar berkumpul.",
+    "avatarUrl": "/avatars/avatar-budi.jpg",
+    "parentIds": ["1", "2"],
+    "spouseIds": ["4", "10"],
+    "generation": 2
+  },
+  {
+    "id": "4",
+    "name": "Dewi Lestari",
+    "birthDate": "1970-11-05",
+    "gender": "female",
+    "relation": "Anggota Keluarga",
+    "description": "Arsitek yang detail dan lembut, dikenal senang merapikan acara-acara keluarga.",
+    "avatarUrl": "/avatars/avatar-dewi.jpg",
+    "spouseIds": ["3"],
+    "generation": 2
+  },
+  {
+    "id": "5",
+    "name": "Ratna Suryadi",
+    "birthDate": "1972-06-18",
+    "gender": "female",
+    "relation": "Anggota Keluarga",
+    "description": "Pengusaha kuliner yang aktif dan supel, selalu membawa energi ceria di keluarga.",
+    "avatarUrl": "/avatars/avatar-ratna.jpg",
+    "parentIds": ["1", "2"],
+    "spouseIds": ["6"],
+    "generation": 2
+  },
+  {
+    "id": "6",
+    "name": "Hendra Wijaya",
+    "birthDate": "1971-09-30",
+    "gender": "male",
+    "relation": "Anggota Keluarga",
+    "description": "Fotografer keluarga yang sering mendokumentasikan momen penting dalam setiap pertemuan besar.",
+    "avatarUrl": "/avatars/avatar-hendra.jpg",
+    "spouseIds": ["5"],
+    "generation": 2
+  },
+  {
+    "id": "7",
+    "name": "Fajar Suryadi",
+    "birthDate": "1995-04-12",
+    "gender": "male",
+    "relation": "Anggota Keluarga",
+    "description": "Suka teknologi dan menjadi orang pertama yang membantu keluarga saat ada urusan digital.",
+    "avatarUrl": "/avatars/avatar-fajar.jpg",
+    "parentIds": ["3", "4"],
+    "generation": 3
+  },
+  {
+    "id": "8",
+    "name": "Anisa Suryadi",
+    "birthDate": "1998-12-25",
+    "gender": "female",
+    "relation": "Anggota Keluarga",
+    "description": "Desainer grafis yang kreatif dan sering membuat materi visual untuk acara keluarga.",
+    "avatarUrl": "/avatars/avatar-anisa.jpg",
+    "parentIds": ["3", "4"],
+    "generation": 3
+  },
+  {
+    "id": "9",
+    "name": "Rizky Wijaya",
+    "birthDate": "1997-08-08",
+    "gender": "male",
+    "relation": "Anggota Keluarga",
+    "description": "Musisi keluarga yang selalu diminta tampil saat kumpul besar atau perayaan spesial.",
+    "avatarUrl": "/avatars/avatar-rizky.jpg",
+    "parentIds": ["5", "6"],
+    "generation": 3
+  },
+  {
+    "id": "10",
+    "name": "Tesa Anjani",
+    "birthDate": "1976-03-03",
+    "gender": "female",
+    "relation": "Anggota Keluarga",
+    "description": "Anggota keluarga besar yang hadir sebagai pasangan tambahan Budi dalam contoh data awal.",
+    "generation": 2,
+    "spouseIds": ["3"]
+  }
+]

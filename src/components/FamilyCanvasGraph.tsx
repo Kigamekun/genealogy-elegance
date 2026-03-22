@@ -32,6 +32,7 @@ interface UnitDraft {
   maleId?: string;
   wifeIds: string[];
   spouseGap: number;
+  memberOffsets: number[];
   weight: number;
   width: number;
   orderKey: number;
@@ -359,6 +360,43 @@ export function FamilyCanvasGraph({
   const layout = useMemo(() => {
     const generationLevels = Array.from(new Set(members.map((member) => member.generation))).sort((a, b) => a - b);
 
+    const getMemberCenterFromPositions = (lookup: Map<string, NodePosition>, memberId: string): number | null => {
+      const position = lookup.get(memberId);
+      return position ? position.x + CARD_WIDTH / 2 : null;
+    };
+
+    const resolveFamilySourceCenter = (parentIds: string[] | undefined, lookup: Map<string, NodePosition>): number | undefined => {
+      if (!parentIds || parentIds.length === 0) return undefined;
+
+      const fatherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "male");
+      const motherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "female");
+      const father = fatherId ? memberMap.get(fatherId) : undefined;
+      const motherCenter = motherId ? getMemberCenterFromPositions(lookup, motherId) : null;
+
+      if (father && motherCenter !== null && getSpouseIds(father).length > 1) {
+        return motherCenter;
+      }
+
+      const centers = parentIds
+        .map((parentId) => getMemberCenterFromPositions(lookup, parentId))
+        .filter((value): value is number => value !== null);
+
+      if (centers.length === 0) return undefined;
+      if (centers.length === 1) return centers[0];
+      return average(centers);
+    };
+
+    const shouldUseMotherAnchor = (parentIds: string[] | undefined): boolean => {
+      if (!parentIds || parentIds.length < 2) return false;
+
+      const fatherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "male");
+      const motherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "female");
+      if (!fatherId || !motherId) return false;
+
+      const father = memberMap.get(fatherId);
+      return Boolean(father && getSpouseIds(father).length > 1);
+    };
+
     const getMemberWeight = (member: FamilyMember) => {
       const parentBirth = getParentIds(member)
         .map((parentId) => memberMap.get(parentId))
@@ -404,6 +442,7 @@ export function FamilyCanvasGraph({
           maleId: male.id,
           wifeIds: wives.map((wife) => wife.id),
           spouseGap,
+          memberOffsets: memberIds.map((_, memberIndex) => memberIndex * (CARD_WIDTH + spouseGap)),
           weight,
           width: memberIds.length * CARD_WIDTH + Math.max(0, memberIds.length - 1) * spouseGap,
           orderKey: timestamp(male.birthDate) || weight,
@@ -419,6 +458,7 @@ export function FamilyCanvasGraph({
           maleId: member.gender === "male" ? member.id : undefined,
           wifeIds: [],
           spouseGap: SPOUSE_GAP,
+          memberOffsets: [0],
           weight: getMemberWeight(member),
           width: CARD_WIDTH,
           orderKey: timestamp(member.birthDate) || getMemberWeight(member),
@@ -505,6 +545,35 @@ export function FamilyCanvasGraph({
       if (!draft) return CARD_WIDTH;
 
       const childDrafts = childDraftsBySource.get(unitId) ?? [];
+
+      if (draft.maleId && draft.wifeIds.length > 1) {
+        const childClusterWidthsByWife = new Map<string, number>();
+
+        draft.wifeIds.forEach((wifeId) => {
+          const wifeChildDrafts = childDrafts.filter((childDraft) => childDraft.sourceParentIds?.includes(wifeId));
+          const clusterWidth = wifeChildDrafts.length === 0
+            ? CARD_WIDTH
+            : wifeChildDrafts.reduce((sum, childDraft) => sum + resolveSubtreeWidth(childDraft.id), 0)
+              + Math.max(0, wifeChildDrafts.length - 1) * UNIT_GAP;
+          childClusterWidthsByWife.set(wifeId, Math.max(CARD_WIDTH, clusterWidth));
+        });
+
+        const memberOffsets = [0];
+        let cursor = CARD_WIDTH + SPOUSE_GAP;
+
+        draft.wifeIds.forEach((wifeId) => {
+          const wifeSpanWidth = childClusterWidthsByWife.get(wifeId) ?? CARD_WIDTH;
+          memberOffsets.push(cursor + (wifeSpanWidth - CARD_WIDTH) / 2);
+          cursor += wifeSpanWidth + SAME_SOURCE_CLUSTER_GAP;
+        });
+
+        draft.memberOffsets = memberOffsets;
+        draft.width = Math.max(
+          cursor - SAME_SOURCE_CLUSTER_GAP,
+          memberOffsets[memberOffsets.length - 1] + CARD_WIDTH,
+        );
+      }
+
       if (childDrafts.length === 0) {
         subtreeWidthCache.set(unitId, draft.width);
         return draft.width;
@@ -545,17 +614,8 @@ export function FamilyCanvasGraph({
       }>();
 
       drafts.forEach((draft) => {
-        const sourceCenters = (draft.sourceParentIds ?? [])
-          .map((parentId) => {
-            const position = positions.get(parentId);
-            return position ? position.x + CARD_WIDTH / 2 : null;
-          })
-          .filter((value): value is number => value !== null);
-        const sourceCenter = sourceCenters.length > 0
-          ? average(sourceCenters)
-          : draft.sourceUnitId
-            ? unitsById.get(draft.sourceUnitId)?.centerX
-            : undefined;
+        const sourceCenter = resolveFamilySourceCenter(draft.sourceParentIds, positions)
+          ?? (draft.sourceUnitId ? unitsById.get(draft.sourceUnitId)?.centerX : undefined);
         const clusterId = draft.sourceClusterKey ?? draft.sourceUnitId ?? draft.id;
 
         if (!clusterMap.has(clusterId)) {
@@ -650,7 +710,7 @@ export function FamilyCanvasGraph({
           maxX = Math.max(maxX, footprintCursor + draft.subtreeWidth);
 
           draft.memberIds.forEach((memberId, memberIndex) => {
-            const memberX = unitX + memberIndex * (CARD_WIDTH + draft.spouseGap);
+            const memberX = unitX + (draft.memberOffsets[memberIndex] ?? (memberIndex * (CARD_WIDTH + draft.spouseGap)));
             positions.set(memberId, { x: memberX, y });
             unitByMember.set(memberId, unit.id);
           });
@@ -752,6 +812,12 @@ export function FamilyCanvasGraph({
 
         if (anchorEntries.length === 0) return null;
 
+        const motherAnchored = shouldUseMotherAnchor(group.parentIds);
+        const selectedAnchors = motherAnchored && group.motherId
+          ? anchorEntries.filter((entry) => entry.id === group.motherId)
+          : anchorEntries;
+        const effectiveAnchors = selectedAnchors.length > 0 ? selectedAnchors : anchorEntries;
+
         const targetUnitIds = Array.from(new Set(
           Array.from(group.childIds)
             .map((childId) => unitByMember.get(childId))
@@ -773,18 +839,22 @@ export function FamilyCanvasGraph({
 
         if (targets.length === 0) return null;
 
-        const parentAnchors = anchorEntries.map((entry) => entry.anchor).sort((left, right) => left.x - right.x);
-        const pairCenterX = round(average(parentAnchors.map((anchor) => anchor.x)));
-        const laneKey = group.fatherId
-          ? `${group.fatherId}->g${group.generation}`
-          : `${group.parentIds.slice().sort().join(":")}->g${group.generation}`;
+        const parentAnchors = effectiveAnchors.map((entry) => entry.anchor).sort((left, right) => left.x - right.x);
+        const sourceCenter = motherAnchored && group.motherId
+          ? parentAnchors[0]?.x
+          : resolveFamilySourceCenter(group.parentIds, shiftedPositions) ?? average(parentAnchors.map((anchor) => anchor.x));
+        const laneKey = motherAnchored && group.motherId
+          ? `${group.motherId}->g${group.generation}`
+          : group.fatherId
+            ? `${group.fatherId}->g${group.generation}`
+            : `${group.parentIds.slice().sort().join(":")}->g${group.generation}`;
 
         return {
           id: sourceKey,
           laneKey,
           parentAnchors,
           targets,
-          sourceX: pairCenterX,
+          sourceX: round(sourceCenter),
         };
       })
       .filter((group): group is {

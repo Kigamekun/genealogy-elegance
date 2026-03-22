@@ -108,12 +108,44 @@ describe("FamilyCanvasGraph layout", () => {
       member({ id: "rizky", name: "Rizky Wijaya", gender: "male", relation: "Anak", birthDate: "1997-08-08", generation: 3, parentIds: ["hendra", "ratna"] }),
       member({ id: "gob", name: "GOB", gender: "male", relation: "Anak", birthDate: "2005-02-01", generation: 3, parentIds: ["hendra", "fe"] }),
     ], () => {
-      const hendraCenter = getCardCenterX("Hendra Wijaya");
-      const ratnaPairCenter = (hendraCenter + getCardCenterX("Ratna Suryadi")) / 2;
-      const fePairCenter = (hendraCenter + getCardCenterX("Fe")) / 2;
+      expect(Math.abs(getCardCenterX("Rizky Wijaya") - getCardCenterX("Ratna Suryadi"))).toBeLessThan(1);
+      expect(Math.abs(getCardCenterX("GOB") - getCardCenterX("Fe"))).toBeLessThan(1);
+    });
+  });
 
-      expect(Math.abs(getCardCenterX("Rizky Wijaya") - ratnaPairCenter)).toBeLessThan(1);
-      expect(Math.abs(getCardCenterX("GOB") - fePairCenter)).toBeLessThan(1);
+  it("keeps each wife branch centered when one husband has children with multiple wives", () => {
+    withGraph([
+      member({ id: "budi", name: "Budi", gender: "male", birthDate: "1968-01-10", generation: 2, spouseIds: ["dewi", "tesa"] }),
+      member({ id: "dewi", name: "Dewi", gender: "female", birthDate: "1970-11-05", generation: 2, spouseIds: ["budi"] }),
+      member({ id: "tesa", name: "Tesa", gender: "female", birthDate: "1976-02-14", generation: 2, spouseIds: ["budi"] }),
+      member({ id: "fajar", name: "Fajar", gender: "male", birthDate: "1995-04-12", generation: 3, parentIds: ["budi", "dewi"] }),
+      member({ id: "anisa", name: "Anisa", gender: "female", birthDate: "1998-12-25", generation: 3, parentIds: ["budi", "dewi"] }),
+      member({ id: "sds", name: "sds", gender: "male", birthDate: "2026-01-15", generation: 3, parentIds: ["budi", "tesa"] }),
+    ], () => {
+      const dewiChildrenCenter = (getCardCenterX("Fajar") + getCardCenterX("Anisa")) / 2;
+
+      expect(Math.abs(dewiChildrenCenter - getCardCenterX("Dewi"))).toBeLessThan(1);
+      expect(Math.abs(getCardCenterX("sds") - getCardCenterX("Tesa"))).toBeLessThan(1);
+    });
+  });
+
+  it("shifts the second wife branch so each sibling row stays centered under its own mother", () => {
+    withGraph([
+      member({ id: "budi", name: "Budi", gender: "male", birthDate: "1968-01-10", generation: 2, spouseIds: ["dewi", "tesa"] }),
+      member({ id: "dewi", name: "Dewi", gender: "female", birthDate: "1970-11-05", generation: 2, spouseIds: ["budi"] }),
+      member({ id: "tesa", name: "Tesa", gender: "female", birthDate: "1976-02-14", generation: 2, spouseIds: ["budi"] }),
+      member({ id: "fajar", name: "Fajar", gender: "male", birthDate: "1995-04-12", generation: 3, parentIds: ["budi", "dewi"] }),
+      member({ id: "anisa", name: "Anisa", gender: "female", birthDate: "1998-12-25", generation: 3, parentIds: ["budi", "dewi"] }),
+      member({ id: "ds", name: "ds", gender: "male", birthDate: "2024-01-01", generation: 3, parentIds: ["budi", "tesa"] }),
+      member({ id: "test", name: "test", gender: "male", birthDate: "2025-01-01", generation: 3, parentIds: ["budi", "tesa"] }),
+      member({ id: "fs", name: "fs", gender: "male", birthDate: "2026-01-01", generation: 3, parentIds: ["budi", "tesa"] }),
+    ], () => {
+      const dewiChildrenCenter = (getCardCenterX("Fajar") + getCardCenterX("Anisa")) / 2;
+      const tesaChildrenCenter = (getCardCenterX("ds") + getCardCenterX("test") + getCardCenterX("fs")) / 3;
+
+      expect(Math.abs(dewiChildrenCenter - getCardCenterX("Dewi"))).toBeLessThan(1);
+      expect(Math.abs(tesaChildrenCenter - getCardCenterX("Tesa"))).toBeLessThan(1);
+      expect(getCardCenterX("Tesa")).toBeGreaterThan(getCardCenterX("Dewi"));
     });
   });
 
