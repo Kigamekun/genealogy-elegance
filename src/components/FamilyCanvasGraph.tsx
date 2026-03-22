@@ -60,9 +60,10 @@ interface UnitLayout {
   order: number;
 }
 
-interface SpouseBadge {
+interface SpouseConnector {
   id: string;
-  x: number;
+  x1: number;
+  x2: number;
   y: number;
 }
 
@@ -685,24 +686,20 @@ export function FamilyCanvasGraph({
     const width = contentWidth + PADDING_X * 2;
     const height = generationLevels.length * CARD_HEIGHT + Math.max(0, generationLevels.length - 1) * V_GAP + PADDING_Y * 2;
 
-    const spouseBadges: SpouseBadge[] = [];
+    const spouseConnectors: SpouseConnector[] = [];
     shiftedUnitsById.forEach((unit) => {
-      if (!unit.maleId || unit.wifeIds.length === 0) return;
+      if (unit.memberIds.length <= 1) return;
 
-      const malePosition = shiftedPositions.get(unit.maleId);
-      if (!malePosition) return;
+      unit.memberIds.slice(0, -1).forEach((memberId, index) => {
+        const nextMemberId = unit.memberIds[index + 1];
+        const currentPosition = shiftedPositions.get(memberId);
+        const nextPosition = shiftedPositions.get(nextMemberId);
+        if (!currentPosition || !nextPosition) return;
 
-      const maleCenterX = malePosition.x + CARD_WIDTH / 2;
-
-      unit.wifeIds.forEach((wifeId) => {
-        const wifePosition = shiftedPositions.get(wifeId);
-        if (!wifePosition) return;
-
-        const wifeCenterX = wifePosition.x + CARD_WIDTH / 2;
-
-        spouseBadges.push({
-          id: `${unit.id}-${wifeId}-heart`,
-          x: average([maleCenterX, wifeCenterX]),
+        spouseConnectors.push({
+          id: `${unit.id}-spouse-link-${memberId}-${nextMemberId}`,
+          x1: currentPosition.x + CARD_WIDTH + 16,
+          x2: nextPosition.x - 16,
           y: unit.y + CARD_HEIGHT / 2,
         });
       });
@@ -845,14 +842,14 @@ export function FamilyCanvasGraph({
       return left.source.x - right.source.x;
     });
 
-    return {
-      positions: shiftedPositions,
-      unitByMember,
-      width,
-      height,
-      spouseBadges,
-      parentGroups,
-    };
+      return {
+        positions: shiftedPositions,
+        unitByMember,
+        width,
+        height,
+        spouseConnectors,
+        parentGroups,
+      };
   }, [memberMap, members]);
 
   const sourceMember = connectState ? memberMap.get(connectState.sourceId) : undefined;
@@ -903,6 +900,21 @@ export function FamilyCanvasGraph({
       onPointerLeave={() => setCursor(null)}
     >
       <svg className="absolute inset-0 h-full w-full pointer-events-none" shapeRendering="geometricPrecision">
+        {layout.spouseConnectors.map((connector) => (
+          <line
+            key={connector.id}
+            x1={connector.x1}
+            y1={connector.y}
+            x2={connector.x2}
+            y2={connector.y}
+            stroke="hsl(var(--tree-line) / 0.7)"
+            strokeWidth={2.1}
+            strokeLinecap="round"
+            strokeDasharray="8 8"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+
         {layout.parentGroups.map((group) => {
           const geometry = buildParentGroupGeometry(group);
           return (
@@ -946,16 +958,6 @@ export function FamilyCanvasGraph({
           />
         )}
       </svg>
-
-      {layout.spouseBadges.map((badge) => (
-        <div
-          key={badge.id}
-          className="absolute z-10 -translate-x-1/2 -translate-y-1/2 animate-reveal-up flex items-center gap-1 rounded-full border border-border/70 bg-background/95 px-2 py-1 shadow-sm transition-[left,top,opacity,transform] duration-500 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)]"
-          style={{ left: badge.x, top: badge.y }}
-        >
-          <Heart className="h-3.5 w-3.5 text-accent" />
-        </div>
-      ))}
 
       {members.map((member) => {
         const position = layout.positions.get(member.id);
