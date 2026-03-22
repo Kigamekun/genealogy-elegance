@@ -818,24 +818,18 @@ export function FamilyCanvasGraph({
           : anchorEntries;
         const effectiveAnchors = selectedAnchors.length > 0 ? selectedAnchors : anchorEntries;
 
-        const targetUnitIds = Array.from(new Set(
-          Array.from(group.childIds)
-            .map((childId) => unitByMember.get(childId))
-            .filter((unitId): unitId is string => Boolean(unitId)),
-        ));
+        const targets = Array.from(group.childIds)
+          .map((childId) => {
+            const position = shiftedPositions.get(childId);
+            if (!position) return null;
 
-        const targets = targetUnitIds
-          .map((unitId) => {
-            const targetUnit = shiftedUnitsById.get(unitId);
-            if (!targetUnit) return null;
-
-            return {
-              x: targetUnit.centerX,
-              y: targetUnit.y - 1,
-            };
+            return getAnchors(position).top;
           })
           .filter((target): target is Point => Boolean(target))
-          .sort((left, right) => left.x - right.x);
+          .sort((left, right) => left.x - right.x)
+          .filter((target, index, allTargets) =>
+            allTargets.findIndex((candidate) => candidate.x === target.x && candidate.y === target.y) === index,
+          );
 
         if (targets.length === 0) return null;
 

@@ -71,6 +71,31 @@ function getCardCenterX(name: string): number {
   return parseFloat(card.style.left) + 130;
 }
 
+function getCardTopY(name: string): number {
+  const label = getTextNode(name);
+  const card = label.closest("div.absolute.group") as HTMLElement | null;
+  if (!card) throw new Error(`Card wrapper not found for ${name}`);
+  return parseFloat(card.style.top) - 1;
+}
+
+function hasConnectorEndpoint(x: number, y: number): boolean {
+  const connectorSvg = document.querySelector("svg.absolute.inset-0");
+  if (!(connectorSvg instanceof SVGElement)) {
+    throw new Error("Connector SVG not found");
+  }
+
+  return Array.from(connectorSvg.querySelectorAll("path")).some((path) => {
+    const d = path.getAttribute("d");
+    if (!d) return false;
+    const numbers = d.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+    if (numbers.length < 2) return false;
+
+    const endX = numbers[numbers.length - 2];
+    const endY = numbers[numbers.length - 1];
+    return Math.abs(endX - x) < 1 && Math.abs(endY - y) < 1;
+  });
+}
+
 function withGraph(members: FamilyMember[], run: () => void) {
   const view = renderGraph(members);
   try {
@@ -158,6 +183,20 @@ describe("FamilyCanvasGraph layout", () => {
       expect(document.body.textContent).not.toContain("Nenek");
       expect(document.body.textContent).toContain("♂");
       expect(document.body.textContent).toContain("♀");
+    });
+  });
+
+  it("connects parent lines to the actual child card instead of the spouse gap", () => {
+    withGraph([
+      member({ id: "ahmad", name: "Ahmad Suryadi", gender: "male", birthDate: "1940-03-15", generation: 1, spouseIds: ["siti"] }),
+      member({ id: "siti", name: "Siti Rahayu", gender: "female", birthDate: "1945-07-22", generation: 1, spouseIds: ["ahmad"] }),
+      member({ id: "budi", name: "Budi Suryadi", gender: "male", birthDate: "1968-01-10", generation: 2, spouseIds: ["dewi"], parentIds: ["ahmad", "siti"] }),
+      member({ id: "dewi", name: "Dewi Lestari", gender: "female", birthDate: "1970-11-05", generation: 2, spouseIds: ["budi"] }),
+      member({ id: "ratna", name: "Ratna Suryadi", gender: "female", birthDate: "1972-06-18", generation: 2, spouseIds: ["hendra"], parentIds: ["ahmad", "siti"] }),
+      member({ id: "hendra", name: "Hendra Wijaya", gender: "male", birthDate: "1971-09-30", generation: 2, spouseIds: ["ratna"] }),
+    ], () => {
+      expect(hasConnectorEndpoint(getCardCenterX("Budi Suryadi"), getCardTopY("Budi Suryadi"))).toBe(true);
+      expect(hasConnectorEndpoint(getCardCenterX("Ratna Suryadi"), getCardTopY("Ratna Suryadi"))).toBe(true);
     });
   });
 });
