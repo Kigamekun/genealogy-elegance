@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { FamilyMember } from "@/lib/family-data";
 import { X, Calendar, User, Edit, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,8 +13,15 @@ interface MemberDetailModalProps {
 export function MemberDetailModal({ member, onClose, onEdit, onDelete }: MemberDetailModalProps) {
   const isDeceased = !!member.deathDate;
 
-  return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+  const modal = (
+    <div
+      className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto p-4 animate-fade-in sm:items-center"
+      style={{
+        paddingTop: "max(1rem, calc(env(safe-area-inset-top) + 1rem))",
+        paddingBottom: "max(1rem, calc(env(safe-area-inset-bottom) + 1rem))",
+      }}
+      onClick={onClose}
+    >
       <div className="absolute inset-0 bg-foreground/20 backdrop-blur-sm" />
       <div
         className="glass-card rounded-2xl p-6 max-w-md w-full relative z-10 animate-reveal-up shadow-2xl"
@@ -72,4 +80,10 @@ export function MemberDetailModal({ member, onClose, onEdit, onDelete }: MemberD
       </div>
     </div>
   );
+
+  if (typeof document !== "undefined") {
+    return createPortal(modal, document.body);
+  }
+
+  return modal;
 }

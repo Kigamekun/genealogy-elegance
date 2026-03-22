@@ -39,6 +39,8 @@ interface TouchDragState {
   startY: number;
   originX: number;
   originY: number;
+  activated: boolean;
+  startedOnInteractive: boolean;
 }
 
 const MIN_SCALE = 0.2;
@@ -47,6 +49,7 @@ const BUTTON_ZOOM_FACTOR = 1.16;
 const WHEEL_ZOOM_INTENSITY = 0.0022;
 const FIT_PADDING_DESKTOP = 28;
 const FIT_PADDING_MOBILE = 14;
+const TOUCH_DRAG_THRESHOLD = 6;
 
 function shouldIgnorePanTarget(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
@@ -57,7 +60,6 @@ function shouldIgnorePanTarget(target: EventTarget | null): boolean {
 export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
   const [scalePercent, setScalePercent] = useState(100);
   const [isDragging, setIsDragging] = useState(false);
-  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
   const [isFallbackFullscreen, setIsFallbackFullscreen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -76,6 +78,8 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     startY: 0,
     originX: 0,
     originY: 0,
+    activated: false,
+    startedOnInteractive: false,
   });
   const pinchRef = useRef<PinchState | null>(null);
   const frameRef = useRef<number | null>(null);
@@ -111,21 +115,6 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       if (fitFrameRef.current !== null) window.cancelAnimationFrame(fitFrameRef.current);
     };
   }, [applyTransform]);
-
-  useEffect(() => {
-    if (typeof document === "undefined") return undefined;
-
-    const syncFullscreenState = () => {
-      setIsNativeFullscreen(document.fullscreenElement === wrapperRef.current);
-    };
-
-    document.addEventListener("fullscreenchange", syncFullscreenState);
-    syncFullscreenState();
-
-    return () => {
-      document.removeEventListener("fullscreenchange", syncFullscreenState);
-    };
-  }, []);
 
   useEffect(() => {
     if (!isFallbackFullscreen || typeof document === "undefined") return undefined;
@@ -228,6 +217,32 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     scheduleRender(true);
   }, [clampScale, getPinchMetricsFromPoints, scheduleRender]);
 
+  const beginTouchDrag = useCallback((touch: Touch, target: EventTarget | null, startedOnInteractive?: boolean) => {
+    touchDragRef.current = {
+      touchId: touch.identifier,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      originX: transformRef.current.x,
+      originY: transformRef.current.y,
+      activated: false,
+      startedOnInteractive: startedOnInteractive ?? shouldIgnorePanTarget(target),
+    };
+  }, []);
+
+  const clearTouchDrag = useCallback(() => {
+    const hadTouchDrag = touchDragRef.current.touchId !== null || touchDragRef.current.activated || touchDragRef.current.startedOnInteractive;
+    touchDragRef.current = {
+      touchId: null,
+      startX: 0,
+      startY: 0,
+      originX: transformRef.current.x,
+      originY: transformRef.current.y,
+      activated: false,
+      startedOnInteractive: false,
+    };
+    if (hadTouchDrag) setIsDragging(false);
+  }, []);
+
   const zoomAtClientPoint = useCallback((nextScale: number, clientX: number, clientY: number) => {
     const container = containerRef.current;
     if (!container) return;
@@ -268,37 +283,18 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     userInteractedRef.current = false;
     scheduleFitToView();
   };
-  const isImmersive = isNativeFullscreen || isFallbackFullscreen;
+  const isImmersive = isFallbackFullscreen;
 
   const toggleFullscreen = useCallback(async () => {
     if (typeof document === "undefined") return;
 
+    if (document.fullscreenElement === wrapperRef.current) {
+      await document.exitFullscreen();
+    }
+
     if (isFallbackFullscreen) {
       setIsFallbackFullscreen(false);
       return;
-    }
-
-    if (document.fullscreenElement === wrapperRef.current) {
-      await document.exitFullscreen();
-      return;
-    }
-
-    const prefersFallbackFullscreen = window.matchMedia("(max-width: 767px)").matches;
-    if (prefersFallbackFullscreen) {
-      userInteractedRef.current = false;
-      setIsFallbackFullscreen(true);
-      return;
-    }
-
-    const wrapper = wrapperRef.current;
-    if (wrapper?.requestFullscreen) {
-      try {
-        userInteractedRef.current = false;
-        await wrapper.requestFullscreen();
-        return;
-      } catch {
-        // Fall back to a fixed immersive layout for browsers that reject fullscreen.
-      }
     }
 
     userInteractedRef.current = false;
@@ -403,10 +399,12 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     finishPointer(e.pointerId, e.currentTarget);
   }, [finishPointer]);
 
-  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    const touches = Array.from(e.touches);
+  const handleNativeTouchStart = useCallback((event: TouchEvent) => {
+    const touches = Array.from(event.touches);
+
     if (touches.length >= 2) {
       userInteractedRef.current = true;
+      event.preventDefault();
       beginPinch(
         { x: touches[0].clientX, y: touches[0].clientY },
         { x: touches[1].clientX, y: touches[1].clientY },
@@ -415,24 +413,17 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
         { x: touches[0].clientX, y: touches[0].clientY },
         { x: touches[1].clientX, y: touches[1].clientY },
       );
+      clearTouchDrag();
       return;
     }
 
-    const touch = e.changedTouches[0];
+    const touch = event.changedTouches[0];
     if (!touch) return;
-    if (shouldIgnorePanTarget(e.target)) return;
+    beginTouchDrag(touch, event.target);
+  }, [beginPinch, beginTouchDrag, clearTouchDrag, updatePinch]);
 
-    touchDragRef.current = {
-      touchId: touch.identifier,
-      startX: touch.clientX,
-      startY: touch.clientY,
-      originX: transformRef.current.x,
-      originY: transformRef.current.y,
-    };
-  }, [beginPinch, updatePinch]);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    const touches = Array.from(e.touches);
+  const handleNativeTouchMove = useCallback((event: TouchEvent) => {
+    const touches = Array.from(event.touches);
 
     if (touches.length >= 2) {
       if (!pinchRef.current) {
@@ -443,37 +434,43 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       }
 
       userInteractedRef.current = true;
-      e.preventDefault();
+      event.preventDefault();
       updatePinch(
         { x: touches[0].clientX, y: touches[0].clientY },
         { x: touches[1].clientX, y: touches[1].clientY },
       );
+      clearTouchDrag();
       return;
     }
 
     const drag = touchDragRef.current;
     if (drag.touchId === null) return;
 
-    const touch = Array.from(e.touches).find((item) => item.identifier === drag.touchId);
+    const touch = touches.find((item) => item.identifier === drag.touchId);
     if (!touch) return;
 
     const dx = touch.clientX - drag.startX;
     const dy = touch.clientY - drag.startY;
-    if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
+
+    if (!drag.activated) {
+      if (Math.abs(dx) < TOUCH_DRAG_THRESHOLD && Math.abs(dy) < TOUCH_DRAG_THRESHOLD) return;
+      if (drag.startedOnInteractive) return;
+      drag.activated = true;
+      setIsDragging(true);
+    }
 
     userInteractedRef.current = true;
-    e.preventDefault();
-    setIsDragging(true);
+    event.preventDefault();
     transformRef.current = {
       ...transformRef.current,
       x: drag.originX + dx,
       y: drag.originY + dy,
     };
     scheduleRender(false);
-  }, [beginPinch, scheduleRender, updatePinch]);
+  }, [beginPinch, clearTouchDrag, scheduleRender, updatePinch]);
 
-  const handleTouchEnd = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    const remainingTouches = Array.from(e.touches);
+  const handleNativeTouchEnd = useCallback((event: TouchEvent) => {
+    const remainingTouches = Array.from(event.touches);
 
     if (remainingTouches.length >= 2) {
       beginPinch(
@@ -490,27 +487,36 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     pinchRef.current = null;
 
     if (remainingTouches.length === 1) {
-      const touch = remainingTouches[0];
-      touchDragRef.current = {
-        touchId: touch.identifier,
-        startX: touch.clientX,
-        startY: touch.clientY,
-        originX: transformRef.current.x,
-        originY: transformRef.current.y,
-      };
+      beginTouchDrag(remainingTouches[0], remainingTouches[0].target, false);
       setIsDragging(false);
       return;
     }
 
-    touchDragRef.current.touchId = null;
-    setIsDragging(false);
-  }, [beginPinch, updatePinch]);
+    clearTouchDrag();
+  }, [beginPinch, beginTouchDrag, clearTouchDrag, updatePinch]);
 
-  const handleTouchCancel = useCallback(() => {
+  const handleNativeTouchCancel = useCallback(() => {
     pinchRef.current = null;
-    touchDragRef.current.touchId = null;
-    setIsDragging(false);
-  }, []);
+    clearTouchDrag();
+  }, [clearTouchDrag]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+
+    const options: AddEventListenerOptions = { passive: false };
+    container.addEventListener("touchstart", handleNativeTouchStart, options);
+    container.addEventListener("touchmove", handleNativeTouchMove, options);
+    container.addEventListener("touchend", handleNativeTouchEnd, options);
+    container.addEventListener("touchcancel", handleNativeTouchCancel, options);
+
+    return () => {
+      container.removeEventListener("touchstart", handleNativeTouchStart, options);
+      container.removeEventListener("touchmove", handleNativeTouchMove, options);
+      container.removeEventListener("touchend", handleNativeTouchEnd, options);
+      container.removeEventListener("touchcancel", handleNativeTouchCancel, options);
+    };
+  }, [handleNativeTouchCancel, handleNativeTouchEnd, handleNativeTouchMove, handleNativeTouchStart]);
 
   const canvas = (
     <div
@@ -563,17 +569,20 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       <div
         ref={containerRef}
         className="relative w-full h-full overflow-hidden touch-none"
-        style={{ minHeight: "100%", cursor: isDragging ? "grabbing" : "grab" }}
+        style={{
+          minHeight: "100%",
+          cursor: isDragging ? "grabbing" : "grab",
+          touchAction: "none",
+          overscrollBehavior: "none",
+          WebkitUserSelect: "none",
+          WebkitTouchCallout: "none",
+        }}
         onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
         onPointerLeave={handlePointerLeave}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchCancel}
       >
         <div
           ref={contentRef}

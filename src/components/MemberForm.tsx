@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { FamilyMember } from "@/lib/family-data";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,8 +72,15 @@ export function MemberForm({
     });
   };
 
-  return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 animate-fade-in" onClick={onCancel}>
+  const modal = (
+    <div
+      className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto p-4 animate-fade-in sm:items-center"
+      style={{
+        paddingTop: "max(1rem, calc(env(safe-area-inset-top) + 1rem))",
+        paddingBottom: "max(1rem, calc(env(safe-area-inset-bottom) + 1rem))",
+      }}
+      onClick={onCancel}
+    >
       <div className="absolute inset-0 bg-foreground/20 backdrop-blur-sm" />
       <div
         className="glass-card rounded-2xl p-6 max-w-md w-full relative z-10 animate-reveal-up shadow-2xl"
@@ -202,4 +210,10 @@ export function MemberForm({
       </div>
     </div>
   );
+
+  if (typeof document !== "undefined") {
+    return createPortal(modal, document.body);
+  }
+
+  return modal;
 }
