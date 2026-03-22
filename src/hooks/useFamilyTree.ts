@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
   FamilyMember,
   getInitialMembers,
@@ -8,6 +8,11 @@ import {
   normalizeMemberRelations,
   syncMemberRelations,
 } from "@/lib/family-data";
+import {
+  type FamilyTreeSyncStatus,
+  loadCloudMembers,
+  saveCloudMembers,
+} from "@/lib/family-tree-cloud";
 
 export type AddRelationHint = "child" | "spouse" | "head" | "member";
 
@@ -24,13 +29,17 @@ function toTime(dateString: string): number {
   return Number.isNaN(value) ? 0 : value;
 }
 
-const STORAGE_KEY = "genealogy-elegance.members.v3";
+const STORAGE_KEY = "genealogy-elegance.members.v4";
+const LEGACY_STORAGE_KEYS = ["genealogy-elegance.members.v3"];
+const CLOUD_POLL_INTERVAL_MS = 12000;
 
 function loadMembersFromStorage(): FamilyMember[] {
   if (typeof window === "undefined") return getInitialMembers();
 
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
+    const stored = window.localStorage.getItem(STORAGE_KEY)
+      ?? LEGACY_STORAGE_KEYS.map((key) => window.localStorage.getItem(key)).find(Boolean)
+      ?? null;
     if (!stored) return getInitialMembers();
 
     const hydrated = hydrateMembers(JSON.parse(stored));
@@ -43,6 +52,15 @@ function loadMembersFromStorage(): FamilyMember[] {
 function persistMembers(members: FamilyMember[]) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(members));
+}
+
+function buildExpandedNodes(members: FamilyMember[]): Set<string> {
+  const next = new Set<string>();
+  members.forEach((member) => {
+    if (member.isFamilyHead || getParentIds(member).length === 0) next.add(member.id);
+    getParentIds(member).forEach((parentId) => next.add(parentId));
+  });
+  return next;
 }
 
 function applyFamilyRules(members: FamilyMember[]): FamilyMember[] {
@@ -122,19 +140,122 @@ export function useFamilyTree() {
   const [members, setMembers] = useState<FamilyMember[]>(loadMembersFromStorage);
   const [searchQuery, setSearchQuery] = useState("");
   const [generationFilter, setGenerationFilter] = useState<number | null>(null);
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set(
-    getInitialMembers()
-      .filter((member) => member.isFamilyHead || getParentIds(member).length === 0)
-      .map((member) => member.id),
-  ));
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => buildExpandedNodes(getInitialMembers()));
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null);
   const [isAddingMember, setIsAddingMember] = useState(false);
   const [addIntent, setAddIntent] = useState<AddMemberIntent | null>(null);
+  const [syncStatus, setSyncStatus] = useState<FamilyTreeSyncStatus>("loading");
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const cloudAvailableRef = useRef(false);
+  const hydratedCloudRef = useRef(false);
+  const applyingRemoteRef = useRef(false);
+  const savingRef = useRef(false);
+  const lastRemoteUpdateRef = useRef<string | null>(null);
 
   useEffect(() => {
     persistMembers(members);
   }, [members]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrateFromCloud = async () => {
+      const result = await loadCloudMembers();
+      if (cancelled) return;
+
+      cloudAvailableRef.current = result.available;
+      hydratedCloudRef.current = true;
+
+      if (!result.available) {
+        setSyncStatus("local");
+        return;
+      }
+
+      if (result.members) {
+        applyingRemoteRef.current = true;
+        setMembers(result.members);
+        setExpandedNodes(buildExpandedNodes(result.members));
+      }
+
+      lastRemoteUpdateRef.current = result.updatedAt;
+      setLastSyncedAt(result.updatedAt);
+      setSyncStatus("synced");
+    };
+
+    void hydrateFromCloud();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hydratedCloudRef.current) return;
+    if (!cloudAvailableRef.current) return;
+    if (applyingRemoteRef.current) {
+      applyingRemoteRef.current = false;
+      return;
+    }
+
+    setSyncStatus("saving");
+    savingRef.current = true;
+
+    const timer = window.setTimeout(async () => {
+      const result = await saveCloudMembers(members);
+      savingRef.current = false;
+
+      if (!result.available) {
+        cloudAvailableRef.current = false;
+        setSyncStatus("local");
+        return;
+      }
+
+      lastRemoteUpdateRef.current = result.updatedAt;
+      setLastSyncedAt(result.updatedAt);
+      setSyncStatus("synced");
+    }, 450);
+
+    return () => {
+      window.clearTimeout(timer);
+      savingRef.current = false;
+    };
+  }, [members]);
+
+  useEffect(() => {
+    if (!cloudAvailableRef.current) return undefined;
+
+    let cancelled = false;
+
+    const syncFromCloud = async () => {
+      if (cancelled || savingRef.current) return;
+
+      const result = await loadCloudMembers();
+      if (cancelled || !result.available || !result.members || !result.updatedAt) return;
+      if (result.updatedAt === lastRemoteUpdateRef.current) return;
+
+      applyingRemoteRef.current = true;
+      lastRemoteUpdateRef.current = result.updatedAt;
+      setLastSyncedAt(result.updatedAt);
+      setSyncStatus("synced");
+      setMembers(result.members);
+      setExpandedNodes(buildExpandedNodes(result.members));
+    };
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void syncFromCloud();
+      }
+    }, CLOUD_POLL_INTERVAL_MS);
+
+    window.addEventListener("focus", syncFromCloud);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", syncFromCloud);
+    };
+  }, [syncStatus]);
 
   useEffect(() => {
     setSelectedMember((prev) => prev ? members.find((member) => member.id === prev.id) ?? null : null);
@@ -385,5 +506,7 @@ export function useFamilyTree() {
     connectParent,
     connectSpouse,
     setFamilyHead,
+    syncStatus,
+    lastSyncedAt,
   };
 }

@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { FamilyMember } from "@/lib/family-data";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Calendar, ImagePlus, Trash2, X } from "lucide-react";
+import { ImagePlus, Trash2, X } from "lucide-react";
 
 export interface MemberFormValues {
   name: string;
@@ -23,16 +23,36 @@ interface MemberFormProps {
 }
 
 const MAX_IMAGE_SIZE_MB = 1.5;
+const MONTH_OPTIONS = [
+  { value: "01", label: "Jan" },
+  { value: "02", label: "Feb" },
+  { value: "03", label: "Mar" },
+  { value: "04", label: "Apr" },
+  { value: "05", label: "Mei" },
+  { value: "06", label: "Jun" },
+  { value: "07", label: "Jul" },
+  { value: "08", label: "Agu" },
+  { value: "09", label: "Sep" },
+  { value: "10", label: "Okt" },
+  { value: "11", label: "Nov" },
+  { value: "12", label: "Des" },
+];
 
-function formatBirthDateLabel(value: string): string {
-  if (!value) return "Pilih tanggal lahir";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Pilih tanggal lahir";
-  return parsed.toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+function splitDateParts(value?: string) {
+  const [year = "", month = "", day = ""] = (value ?? "").split("-");
+  return { year, month, day };
+}
+
+function getDaysInMonth(month: string, year: string): number {
+  const monthNumber = Number(month);
+  const yearNumber = Number(year);
+  if (!monthNumber || !yearNumber) return 31;
+  return new Date(yearNumber, monthNumber, 0).getDate();
+}
+
+function buildBirthDate(year: string, month: string, day: string): string {
+  if (!year || !month || !day) return "";
+  return `${year.padStart(4, "0")}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
 export function MemberForm({
@@ -43,12 +63,21 @@ export function MemberForm({
   onSave,
   onCancel,
 }: MemberFormProps) {
+  const initialDateParts = splitDateParts(member?.birthDate ?? new Date().toISOString().slice(0, 10));
   const [name, setName] = useState(member?.name ?? "");
   const [gender, setGender] = useState<FamilyMember["gender"]>(member?.gender ?? defaultGender);
-  const [birthDate, setBirthDate] = useState(member?.birthDate ?? new Date().toISOString().slice(0, 10));
+  const [birthYear, setBirthYear] = useState(initialDateParts.year);
+  const [birthMonth, setBirthMonth] = useState(initialDateParts.month);
+  const [birthDay, setBirthDay] = useState(initialDateParts.day);
   const [description, setDescription] = useState(member?.description ?? "");
   const [avatarUrl, setAvatarUrl] = useState(member?.avatarUrl ?? "");
   const [avatarError, setAvatarError] = useState("");
+  const birthDate = useMemo(() => buildBirthDate(birthYear, birthMonth, birthDay), [birthDay, birthMonth, birthYear]);
+  const maxDay = useMemo(() => getDaysInMonth(birthMonth, birthYear), [birthMonth, birthYear]);
+  const dayOptions = useMemo(
+    () => Array.from({ length: maxDay }, (_, index) => String(index + 1).padStart(2, "0")),
+    [maxDay],
+  );
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -110,7 +139,7 @@ export function MemberForm({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
               {avatarUrl ? (
                 <img src={avatarUrl} alt={name || "Preview foto"} className="h-20 w-20 rounded-2xl object-cover ring-2 ring-border" />
               ) : (
@@ -185,21 +214,53 @@ export function MemberForm({
             <label htmlFor="member-birthdate" className="text-xs font-medium text-muted-foreground mb-1 block">
               Tanggal Lahir *
             </label>
-            <div className="relative min-w-0 overflow-hidden rounded-lg">
-              <div
-                aria-hidden="true"
-                className="pointer-events-none flex h-12 w-full items-center gap-3 rounded-lg border border-input bg-background px-3 text-sm text-foreground sm:text-base"
-              >
-                <span className="min-w-0 flex-1 truncate">{formatBirthDateLabel(birthDate)}</span>
-                <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />
-              </div>
-              <Input
-                id="member-birthdate"
-                type="date"
-                value={birthDate}
-                onChange={(e) => setBirthDate(e.target.value)}
+            <div id="member-birthdate" className="grid grid-cols-[0.9fr_1.1fr_1fr] gap-2">
+              <select
+                value={birthDay}
+                onChange={(e) => setBirthDay(e.target.value)}
                 required
-                className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full"
+                className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-ring"
+              >
+                <option value="">Tanggal</option>
+                {dayOptions.map((day) => (
+                  <option key={day} value={day}>{day}</option>
+                ))}
+              </select>
+              <select
+                value={birthMonth}
+                onChange={(e) => {
+                  const nextMonth = e.target.value;
+                  const cappedMaxDay = getDaysInMonth(nextMonth, birthYear);
+                  setBirthMonth(nextMonth);
+                  if (Number(birthDay) > cappedMaxDay) {
+                    setBirthDay(String(cappedMaxDay).padStart(2, "0"));
+                  }
+                }}
+                required
+                className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-ring"
+              >
+                <option value="">Bulan</option>
+                {MONTH_OPTIONS.map((month) => (
+                  <option key={month.value} value={month.value}>{month.label}</option>
+                ))}
+              </select>
+              <Input
+                type="number"
+                inputMode="numeric"
+                min="1800"
+                max={`${new Date().getFullYear() + 1}`}
+                value={birthYear}
+                onChange={(e) => {
+                  const nextYear = e.target.value.replace(/\D/g, "").slice(0, 4);
+                  const cappedMaxDay = getDaysInMonth(birthMonth, nextYear);
+                  setBirthYear(nextYear);
+                  if (Number(birthDay) > cappedMaxDay) {
+                    setBirthDay(String(cappedMaxDay).padStart(2, "0"));
+                  }
+                }}
+                placeholder="Tahun"
+                required
+                className="h-11 text-sm"
               />
             </div>
           </div>

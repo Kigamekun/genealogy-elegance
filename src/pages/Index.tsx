@@ -6,7 +6,7 @@ import { SearchBar } from "@/components/SearchBar";
 import { ZoomableCanvas } from "@/components/ZoomableCanvas";
 import { FamilyCanvasGraph } from "@/components/FamilyCanvasGraph";
 import { FamilyMember, getChildren, getSpouseIds, hydrateMembers } from "@/lib/family-data";
-import { Download, Plus, TreePine, Upload, Users } from "lucide-react";
+import { Cloud, CloudOff, Download, Plus, RefreshCw, TreePine, Upload, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 function inferRelation(gender: FamilyMember["gender"], hint?: "child" | "spouse" | "head" | "member"): string {
@@ -23,6 +23,7 @@ const Index = () => {
     editingMember, setEditingMember,
     isAddingMember, addIntent, startAddMember, cancelAddMember,
     addMember, updateMember, deleteMember, replaceMembers, connectParent, setFamilyHead,
+    syncStatus, lastSyncedAt,
   } = useFamilyTree();
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -45,6 +46,44 @@ const Index = () => {
     if (addIntent.relationHint === "head") return "Tambah Kepala Keluarga";
     return "Tambah Anggota";
   }, [addIntent, membersById]);
+
+  const syncMeta = useMemo(() => {
+    if (syncStatus === "saving") {
+      return {
+        icon: RefreshCw,
+        iconClassName: "animate-spin text-primary",
+        label: "Menyimpan cloud",
+        detail: "Perubahan sedang dikirim",
+      };
+    }
+
+    if (syncStatus === "synced") {
+      return {
+        icon: Cloud,
+        iconClassName: "text-primary",
+        label: "Cloud aktif",
+        detail: lastSyncedAt
+          ? `Sinkron ${new Date(lastSyncedAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`
+          : "Data lintas device aktif",
+      };
+    }
+
+    if (syncStatus === "local" || syncStatus === "error") {
+      return {
+        icon: CloudOff,
+        iconClassName: "text-muted-foreground",
+        label: "Mode lokal",
+        detail: "Perlu deploy Netlify function",
+      };
+    }
+
+    return {
+      icon: RefreshCw,
+      iconClassName: "animate-spin text-muted-foreground",
+      label: "Mengecek cloud",
+      detail: "Menyiapkan sinkronisasi",
+    };
+  }, [lastSyncedAt, syncStatus]);
 
   const addMemberFromForm = (values: MemberFormValues) => {
     const parentIds = addIntent?.asFamilyHead ? undefined : addIntent?.parentIds;
@@ -231,6 +270,13 @@ const Index = () => {
             <TreePine className="w-3.5 h-3.5 text-primary" />
             <span className="text-sm font-semibold text-foreground tabular-nums">{generations.length}</span>
             <span className="text-xs text-muted-foreground">Generasi</span>
+          </div>
+          <div className="glass-card rounded-lg px-3 py-2 flex items-center gap-2">
+            <syncMeta.icon className={`h-3.5 w-3.5 ${syncMeta.iconClassName}`} />
+            <div className="text-left leading-tight">
+              <p className="text-xs font-semibold text-foreground">{syncMeta.label}</p>
+              <p className="text-[10px] text-muted-foreground">{syncMeta.detail}</p>
+            </div>
           </div>
         </div>
       </section>
