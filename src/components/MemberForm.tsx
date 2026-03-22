@@ -4,44 +4,42 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X } from "lucide-react";
 
+export interface MemberFormValues {
+  name: string;
+  gender: FamilyMember["gender"];
+  description: string;
+}
+
 interface MemberFormProps {
   member?: FamilyMember;
-  parentId?: string;
-  parentGeneration?: number;
-  onSave: (member: Omit<FamilyMember, "id"> | FamilyMember) => void;
+  title?: string;
+  submitLabel?: string;
+  defaultGender?: FamilyMember["gender"];
+  onSave: (values: MemberFormValues) => void;
   onCancel: () => void;
 }
 
-export function MemberForm({ member, parentId, parentGeneration, onSave, onCancel }: MemberFormProps) {
-  const [name, setName] = useState(member?.name || "");
-  const [birthDate, setBirthDate] = useState(member?.birthDate || "");
-  const [deathDate, setDeathDate] = useState(member?.deathDate || "");
-  const [gender, setGender] = useState<"male" | "female">(member?.gender || "male");
-  const [relation, setRelation] = useState(member?.relation || "");
-  const [description, setDescription] = useState(member?.description || "");
-  const [generation] = useState(member?.generation || (parentGeneration ? parentGeneration + 1 : 1));
+export function MemberForm({
+  member,
+  title,
+  submitLabel,
+  defaultGender = "male",
+  onSave,
+  onCancel,
+}: MemberFormProps) {
+  const [name, setName] = useState(member?.name ?? "");
+  const [gender, setGender] = useState<FamilyMember["gender"]>(member?.gender ?? defaultGender);
+  const [description, setDescription] = useState(member?.description ?? "");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !birthDate || !relation) return;
+    if (!name.trim()) return;
 
-    const data = {
-      name,
-      birthDate,
-      deathDate: deathDate || undefined,
+    onSave({
+      name: name.trim(),
       gender,
-      relation,
-      description,
-      generation,
-      parentId: member?.parentId || parentId,
-      spouseId: member?.spouseId,
-    };
-
-    if (member) {
-      onSave({ ...data, id: member.id } as FamilyMember);
-    } else {
-      onSave(data);
-    }
+      description: description.trim(),
+    });
   };
 
   return (
@@ -59,24 +57,18 @@ export function MemberForm({ member, parentId, parentGeneration, onSave, onCance
         </button>
 
         <h2 className="font-display text-xl text-foreground mb-5">
-          {member ? "Edit Anggota" : "Tambah Anggota"}
+          {title ?? (member ? "Edit Anggota" : "Tambah Anggota")}
         </h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Nama Lengkap *</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Masukkan nama" required />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Tanggal Lahir *</label>
-              <Input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} required />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Tanggal Wafat</label>
-              <Input type="date" value={deathDate} onChange={(e) => setDeathDate(e.target.value)} />
-            </div>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Masukkan nama"
+              required
+            />
           </div>
 
           <div>
@@ -104,17 +96,12 @@ export function MemberForm({ member, parentId, parentGeneration, onSave, onCance
           </div>
 
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Hubungan Keluarga *</label>
-            <Input value={relation} onChange={(e) => setRelation(e.target.value)} placeholder="cth: Ayah, Ibu, Anak" required />
-          </div>
-
-          <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Deskripsi Singkat</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Ceritakan sedikit tentang anggota ini..."
-              className="flex w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-none"
+              className="flex w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[96px] resize-none"
             />
           </div>
 
@@ -123,7 +110,7 @@ export function MemberForm({ member, parentId, parentGeneration, onSave, onCance
               Batal
             </Button>
             <Button type="submit" className="flex-1">
-              {member ? "Simpan" : "Tambah"}
+              {submitLabel ?? (member ? "Simpan" : "Tambah")}
             </Button>
           </div>
         </form>

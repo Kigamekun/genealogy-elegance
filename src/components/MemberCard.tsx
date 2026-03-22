@@ -3,7 +3,7 @@ import { Heart, Calendar, ChevronDown, ChevronRight, UserPlus } from "lucide-rea
 
 interface MemberCardProps {
   member: FamilyMember;
-  spouse?: FamilyMember;
+  spouses?: FamilyMember[];
   hasChildren: boolean;
   isExpanded: boolean;
   onToggle: () => void;
@@ -46,6 +46,11 @@ function MiniCard({ member, onClick }: { member: FamilyMember; onClick: () => vo
           <p className="text-[10px] text-muted-foreground">{member.relation}</p>
         </div>
       </div>
+      {member.isFamilyHead && (
+        <span className="inline-flex rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary mb-1.5">
+          Kepala Keluarga
+        </span>
+      )}
       <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
         <Calendar className="w-2.5 h-2.5" />
         <span>{new Date(member.birthDate).getFullYear()}</span>
@@ -55,18 +60,21 @@ function MiniCard({ member, onClick }: { member: FamilyMember; onClick: () => vo
   );
 }
 
-export function MemberCard({ member, spouse, hasChildren, isExpanded, onToggle, onClick, onAddChild }: MemberCardProps) {
+export function MemberCard({ member, spouses = [], hasChildren, isExpanded, onToggle, onClick, onAddChild }: MemberCardProps) {
   return (
     <div className="flex flex-col items-center">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-2">
         <MiniCard member={member} onClick={() => onClick(member)} />
-        {spouse && (
-          <>
+        {spouses.map((spouse) => (
+          <div key={spouse.id} className="flex items-center gap-2">
             <Heart className="w-3.5 h-3.5 text-accent shrink-0" />
             <MiniCard member={spouse} onClick={() => onClick(spouse)} />
-          </>
-        )}
+          </div>
+        ))}
       </div>
+      {spouses.length > 1 && (
+        <p className="text-[10px] text-muted-foreground mt-1">{spouses.length} pasangan</p>
+      )}
       <div className="flex items-center gap-1 mt-1.5">
         {hasChildren && (
           <button
