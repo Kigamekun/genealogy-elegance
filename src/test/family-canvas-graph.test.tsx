@@ -269,6 +269,33 @@ describe("FamilyCanvasGraph layout", () => {
     });
   });
 
+  it("keeps married daughters in the same sibling cluster as their birth family", () => {
+    withGraph([
+      member({ id: "ayah", name: "D Ahmad Rifai", gender: "male", birthDate: "1947-06-26", generation: 2, spouseIds: ["ibu"] }),
+      member({ id: "ibu", name: "R Yatti Rochayati", gender: "female", birthDate: "1955-06-28", generation: 2, spouseIds: ["ayah"] }),
+      member({ id: "restiadi", name: "D Restiadi", gender: "male", birthDate: "1975-08-05", generation: 3, parentIds: ["ayah", "ibu"], spouseIds: ["vira"] }),
+      member({ id: "vira", name: "Vira", gender: "female", birthDate: "1975-09-22", generation: 3, spouseIds: ["restiadi"] }),
+      member({ id: "desy", name: "Desy Restiani", gender: "female", birthDate: "1977-01-01", generation: 3, parentIds: ["ayah", "ibu"], spouseIds: ["danan"] }),
+      member({ id: "danan", name: "Danan Wuryanto", gender: "male", birthDate: "1973-01-01", generation: 3, spouseIds: ["desy"] }),
+      member({ id: "restianti", name: "D Restianti", gender: "female", birthDate: "1979-01-01", generation: 3, parentIds: ["ayah", "ibu"], spouseIds: ["rio"] }),
+      member({ id: "rio", name: "Rio Historiawan", gender: "male", birthDate: "1975-01-01", generation: 3, spouseIds: ["restianti"] }),
+      member({ id: "dekie", name: "Dekie Restiandi", gender: "male", birthDate: "1981-11-23", generation: 3, parentIds: ["ayah", "ibu"], spouseIds: ["disty"] }),
+      member({ id: "disty", name: "Disty Natarriny", gender: "female", birthDate: "1980-06-27", generation: 3, spouseIds: ["dekie"] }),
+    ], () => {
+      const siblingCenters = [
+        getCardCenterX("D Restiadi"),
+        getCardCenterX("Desy Restiani"),
+        getCardCenterX("D Restianti"),
+        getCardCenterX("Dekie Restiandi"),
+      ].sort((left, right) => left - right);
+
+      expect(siblingCenters[3] - siblingCenters[0]).toBeLessThan(2200);
+      expect(Math.abs(siblingCenters[1] - siblingCenters[0])).toBeLessThan(900);
+      expect(Math.abs(siblingCenters[2] - siblingCenters[1])).toBeLessThan(900);
+      expect(Math.abs(siblingCenters[3] - siblingCenters[2])).toBeLessThan(900);
+    });
+  });
+
   it("keeps production-like family branches from overlapping cards when wide subtrees are separated", () => {
     withGraph([
       member({ id: "root-a", name: "Ahmad Safari", gender: "male", birthDate: "1928-01-01", generation: 1, spouseIds: ["root-b"] }),

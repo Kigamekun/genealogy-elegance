@@ -600,10 +600,18 @@ function FamilyCanvasGraphComponent({
     rowDrafts.forEach((drafts, rowIndex) => {
       const preparedDrafts = drafts.map((draft, unitIndex) => {
         const unitId = `g${draft.generation}-u${unitIndex}`;
-        const leadMemberId = draft.maleId ?? draft.memberIds[0];
-        const leadMember = memberMap.get(leadMemberId);
-        const availableParentIds = leadMember
-          ? getParentIds(leadMember).filter((parentId) => draftUnitByMember.has(parentId))
+        const lineageMemberId = [
+          draft.maleId,
+          ...draft.memberIds.filter((memberId) => memberId !== draft.maleId),
+        ].find((memberId): memberId is string => {
+          if (!memberId) return false;
+          const member = memberMap.get(memberId);
+          if (!member) return false;
+          return getParentIds(member).some((parentId) => draftUnitByMember.has(parentId));
+        }) ?? draft.maleId ?? draft.memberIds[0];
+        const lineageMember = memberMap.get(lineageMemberId);
+        const availableParentIds = lineageMember
+          ? getParentIds(lineageMember).filter((parentId) => draftUnitByMember.has(parentId))
           : [];
         const fatherId = availableParentIds.find((parentId) => memberMap.get(parentId)?.gender === "male");
         const motherId = availableParentIds.find((parentId) => memberMap.get(parentId)?.gender === "female");
