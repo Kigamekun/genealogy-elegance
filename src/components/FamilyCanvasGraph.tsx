@@ -1,6 +1,7 @@
 import { memo, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Calendar, Crown, Heart, Pencil, Trash2, UserPlus, UsersRound, X } from "lucide-react";
 import { DeferredImage } from "@/components/DeferredImage";
+import { resolveNonOverlappingSpanShifts } from "@/lib/family-graph-layout";
 import { FamilyMember, getParentIds, getSpouseIds, getSpouseRelationStatus, getSpouses, getStepParentIds } from "@/lib/family-data";
 import { formatFamilyDate, getMemberAge, isMemberDeceased } from "@/lib/member-life";
 import { cn } from "@/lib/utils";
@@ -101,6 +102,18 @@ interface GraphLayout {
   fallbackNotice?: string;
 }
 
+interface PendingParentGroup {
+  id: string;
+  laneKey: string;
+  sourceUnitId: string;
+  generation: number;
+  parentAnchors: Point[];
+  targets: ChildTarget[];
+  sourceX: number;
+  spanMinX: number;
+  spanMaxX: number;
+}
+
 const CARD_WIDTH = 260;
 const CARD_HEIGHT = 136;
 const SPOUSE_GAP = 82;
@@ -115,6 +128,7 @@ const PAIR_JOIN_OFFSET = 34;
 const PAIR_LANE_GAP = 24;
 const CHILD_CONNECTOR_OFFSET = 24;
 const ADOPTED_CHILD_STROKE = "hsl(28 92% 54% / 0.96)";
+const FAMILY_BLOCK_CLEARANCE = 72;
 
 function formatLifeRange(member: FamilyMember): string {
   const birthDate = formatFamilyDate(member.birthDate);
@@ -640,6 +654,16 @@ function FamilyCanvasGraphComponent({
       });
     });
 
+    const subtreeUnitIdsCache = new Map<string, string[]>();
+    const resolveSubtreeUnitIds = (unitId: string): string[] => {
+      if (subtreeUnitIdsCache.has(unitId)) return subtreeUnitIdsCache.get(unitId)!;
+
+      const childUnitIds = (childDraftsBySource.get(unitId) ?? []).map((draft) => draft.id);
+      const subtreeUnitIds = [unitId, ...childUnitIds.flatMap((childUnitId) => resolveSubtreeUnitIds(childUnitId))];
+      subtreeUnitIdsCache.set(unitId, subtreeUnitIds);
+      return subtreeUnitIds;
+    };
+
     const subtreeWidthCache = new Map<string, number>();
     const resolveSubtreeWidth = (unitId: string): number => {
       if (subtreeWidthCache.has(unitId)) return subtreeWidthCache.get(unitId)!;
@@ -846,9 +870,193 @@ function FamilyCanvasGraphComponent({
         footprintX: unit.footprintX + shiftX,
       });
     });
+    const buildPendingParentGroups = (positionLookup: Map<string, NodePosition>): PendingParentGroup[] => {
+      const groupedBySource = new Map<string, {
+        parentIds: string[];
+        fatherId?: string;
+        motherId?: string;
+        generation: number;
+        childIds: Set<string>;
+      }>();
 
-    const contentWidth = maxX - minX;
-    const width = contentWidth + PADDING_X * 2;
+      for (const child of members) {
+        const parentIds = getParentIds(child).filter((parentId) => unitByMember.has(parentId));
+        if (parentIds.length === 0) continue;
+
+        const fatherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "male");
+        const motherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "female");
+        const sourceParentIds = fatherId && motherId ? [fatherId, motherId] : fatherId ? [fatherId] : [parentIds[0]];
+        const sourceKey = `${sourceParentIds.slice().sort().join(":")}->g${child.generation}`;
+
+        if (!groupedBySource.has(sourceKey)) {
+          groupedBySource.set(sourceKey, {
+            parentIds: sourceParentIds,
+            fatherId,
+            motherId,
+            generation: child.generation,
+            childIds: new Set(),
+          });
+        }
+
+        groupedBySource.get(sourceKey)!.childIds.add(child.id);
+      }
+
+      return Array.from(groupedBySource.entries())
+        .map(([sourceKey, group]) => {
+          const sourceUnitId = group.parentIds
+            .map((parentId) => unitByMember.get(parentId))
+            .find((unitId): unitId is string => Boolean(unitId));
+          if (!sourceUnitId) return null;
+
+          const anchorEntries = group.parentIds
+            .map((parentId) => {
+              const position = positionLookup.get(parentId);
+              if (!position) return null;
+
+              return {
+                id: parentId,
+                anchor: getAnchors(position).bottom,
+              };
+            })
+            .filter((entry): entry is { id: string; anchor: Point } => Boolean(entry));
+
+          if (anchorEntries.length === 0) return null;
+
+          const motherAnchored = shouldUseMotherAnchor(group.parentIds);
+          const selectedAnchors = motherAnchored && group.motherId
+            ? anchorEntries.filter((entry) => entry.id === group.motherId)
+            : anchorEntries;
+          const effectiveAnchors = selectedAnchors.length > 0 ? selectedAnchors : anchorEntries;
+
+          const targets = Array.from(group.childIds)
+            .map((childId) => {
+              const position = positionLookup.get(childId);
+              const child = memberMap.get(childId);
+              if (!position || !child) return null;
+              const sourceParentIdSet = new Set(group.parentIds);
+
+              return {
+                childId,
+                x: position.x + CARD_WIDTH / 2,
+                y: position.y - CHILD_CONNECTOR_OFFSET,
+                isStepChild: getStepParentIds(members, child).some((stepParentId) => sourceParentIdSet.has(stepParentId)),
+              };
+            })
+            .filter((target): target is ChildTarget => Boolean(target))
+            .sort((left, right) => left.x - right.x)
+            .filter((target, index, allTargets) =>
+              allTargets.findIndex((candidate) => candidate.childId === target.childId) === index,
+            );
+
+          if (targets.length === 0) return null;
+
+          const parentAnchors = effectiveAnchors.map((entry) => entry.anchor).sort((left, right) => left.x - right.x);
+          const sourceCenter = motherAnchored && group.motherId
+            ? parentAnchors[0]?.x
+            : resolveFamilySourceCenter(group.parentIds, positionLookup) ?? average(parentAnchors.map((anchor) => anchor.x));
+          const laneKey = motherAnchored && group.motherId
+            ? `${group.motherId}->g${group.generation}`
+            : group.fatherId
+              ? `${group.fatherId}->g${group.generation}`
+              : `${group.parentIds.slice().sort().join(":")}->g${group.generation}`;
+          const spanPointsX = [round(sourceCenter), ...parentAnchors.map((anchor) => anchor.x), ...targets.map((target) => target.x)];
+
+          return {
+            id: sourceKey,
+            laneKey,
+            sourceUnitId,
+            generation: group.generation,
+            parentAnchors,
+            targets,
+            sourceX: round(sourceCenter),
+            spanMinX: Math.min(...spanPointsX),
+            spanMaxX: Math.max(...spanPointsX),
+          };
+        })
+        .filter((group): group is PendingParentGroup => Boolean(group));
+    };
+
+    const shiftUnitSubtree = (rootUnitId: string, deltaX: number) => {
+      if (deltaX <= 0) return;
+
+      const subtreeUnitIds = new Set(resolveSubtreeUnitIds(rootUnitId));
+      subtreeUnitIds.forEach((unitId) => {
+        const unit = shiftedUnitsById.get(unitId);
+        if (!unit) return;
+
+        shiftedUnitsById.set(unitId, {
+          ...unit,
+          x: unit.x + deltaX,
+          centerX: unit.centerX + deltaX,
+          footprintX: unit.footprintX + deltaX,
+        });
+
+        unit.memberIds.forEach((memberId) => {
+          const position = shiftedPositions.get(memberId);
+          if (!position) return;
+          shiftedPositions.set(memberId, {
+            ...position,
+            x: position.x + deltaX,
+          });
+        });
+      });
+    };
+
+    for (let iteration = 0; iteration < Math.max(12, members.length * 2); iteration += 1) {
+      const pendingParentGroups = buildPendingParentGroups(shiftedPositions);
+      const familyBlocksByGeneration = new Map<number, Map<string, { id: string; minX: number; maxX: number }>>();
+
+      pendingParentGroups.forEach((group) => {
+        if (!familyBlocksByGeneration.has(group.generation)) {
+          familyBlocksByGeneration.set(group.generation, new Map());
+        }
+
+        const generationBlocks = familyBlocksByGeneration.get(group.generation)!;
+        const existingBlock = generationBlocks.get(group.sourceUnitId);
+
+        if (!existingBlock) {
+          generationBlocks.set(group.sourceUnitId, {
+            id: group.sourceUnitId,
+            minX: group.spanMinX,
+            maxX: group.spanMaxX,
+          });
+          return;
+        }
+
+        generationBlocks.set(group.sourceUnitId, {
+          id: group.sourceUnitId,
+          minX: Math.min(existingBlock.minX, group.spanMinX),
+          maxX: Math.max(existingBlock.maxX, group.spanMaxX),
+        });
+      });
+
+      let shiftedAnyFamily = false;
+
+      for (const generationBlocks of familyBlocksByGeneration.values()) {
+        const familyShifts = resolveNonOverlappingSpanShifts(
+          Array.from(generationBlocks.values()),
+          FAMILY_BLOCK_CLEARANCE,
+        );
+        const nextShift = Array.from(familyShifts.entries()).find(([, deltaX]) => deltaX > 0.5);
+        if (!nextShift) continue;
+
+        shiftUnitSubtree(nextShift[0], nextShift[1]);
+        shiftedAnyFamily = true;
+        break;
+      }
+
+      if (!shiftedAnyFamily) break;
+    }
+
+    const parentGroupsSeed = buildPendingParentGroups(shiftedPositions);
+    const finalUnits = Array.from(shiftedUnitsById.values());
+    const finalMinX = finalUnits.length > 0
+      ? Math.min(...finalUnits.map((unit) => unit.footprintX))
+      : PADDING_X;
+    const finalMaxX = finalUnits.length > 0
+      ? Math.max(...finalUnits.map((unit) => unit.footprintX + unit.footprintWidth))
+      : PADDING_X + CARD_WIDTH;
+    const width = (finalMaxX - finalMinX) + PADDING_X * 2;
     const height = generationLevels.length * CARD_HEIGHT + Math.max(0, generationLevels.length - 1) * V_GAP + PADDING_Y * 2;
 
     const spouseConnectors: SpouseConnector[] = [];
@@ -873,110 +1081,10 @@ function FamilyCanvasGraphComponent({
       });
     });
 
-    const groupedBySource = new Map<string, {
-      parentIds: string[];
-      fatherId?: string;
-      motherId?: string;
-      generation: number;
-      childIds: Set<string>;
-    }>();
-    for (const child of members) {
-      const parentIds = getParentIds(child).filter((parentId) => unitByMember.has(parentId));
-      if (parentIds.length === 0) continue;
-
-      const fatherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "male");
-      const motherId = parentIds.find((parentId) => memberMap.get(parentId)?.gender === "female");
-      const sourceParentIds = fatherId && motherId ? [fatherId, motherId] : fatherId ? [fatherId] : [parentIds[0]];
-      const sourceKey = `${sourceParentIds.slice().sort().join(":")}->g${child.generation}`;
-
-      if (!groupedBySource.has(sourceKey)) {
-        groupedBySource.set(sourceKey, {
-          parentIds: sourceParentIds,
-          fatherId,
-          motherId,
-          generation: child.generation,
-          childIds: new Set(),
-        });
-      }
-
-      groupedBySource.get(sourceKey)!.childIds.add(child.id);
-    }
-
-    const pendingParentGroups = Array.from(groupedBySource.entries())
-      .map(([sourceKey, group]) => {
-        const anchorEntries = group.parentIds
-          .map((parentId) => {
-            const position = shiftedPositions.get(parentId);
-            if (!position) return null;
-
-            return {
-              id: parentId,
-              anchor: getAnchors(position).bottom,
-            };
-          })
-          .filter((entry): entry is { id: string; anchor: Point } => Boolean(entry));
-
-        if (anchorEntries.length === 0) return null;
-
-        const motherAnchored = shouldUseMotherAnchor(group.parentIds);
-        const selectedAnchors = motherAnchored && group.motherId
-          ? anchorEntries.filter((entry) => entry.id === group.motherId)
-          : anchorEntries;
-        const effectiveAnchors = selectedAnchors.length > 0 ? selectedAnchors : anchorEntries;
-
-        const targets = Array.from(group.childIds)
-          .map((childId) => {
-            const position = shiftedPositions.get(childId);
-            const child = memberMap.get(childId);
-            if (!position) return null;
-            if (!child) return null;
-            const sourceParentIdSet = new Set(group.parentIds);
-
-            return {
-              childId,
-              x: position.x + CARD_WIDTH / 2,
-              y: position.y - CHILD_CONNECTOR_OFFSET,
-              isStepChild: getStepParentIds(members, child).some((stepParentId) => sourceParentIdSet.has(stepParentId)),
-            };
-          })
-          .filter((target): target is ChildTarget => Boolean(target))
-          .sort((left, right) => left.x - right.x)
-          .filter((target, index, allTargets) =>
-            allTargets.findIndex((candidate) => candidate.childId === target.childId) === index,
-          );
-
-        if (targets.length === 0) return null;
-
-        const parentAnchors = effectiveAnchors.map((entry) => entry.anchor).sort((left, right) => left.x - right.x);
-        const sourceCenter = motherAnchored && group.motherId
-          ? parentAnchors[0]?.x
-          : resolveFamilySourceCenter(group.parentIds, shiftedPositions) ?? average(parentAnchors.map((anchor) => anchor.x));
-        const laneKey = motherAnchored && group.motherId
-          ? `${group.motherId}->g${group.generation}`
-          : group.fatherId
-            ? `${group.fatherId}->g${group.generation}`
-            : `${group.parentIds.slice().sort().join(":")}->g${group.generation}`;
-
-        return {
-          id: sourceKey,
-          laneKey,
-          parentAnchors,
-          targets,
-          sourceX: round(sourceCenter),
-        };
-      })
-      .filter((group): group is {
-        id: string;
-        laneKey: string;
-        parentAnchors: Point[];
-        targets: Point[];
-        sourceX: number;
-      } => Boolean(group));
-
     const laneIndexByGroupId = new Map<string, number>();
-    const pendingGroupsByLane = new Map<string, typeof pendingParentGroups>();
+    const pendingGroupsByLane = new Map<string, PendingParentGroup[]>();
 
-    pendingParentGroups.forEach((group) => {
+    parentGroupsSeed.forEach((group) => {
       if (!pendingGroupsByLane.has(group.laneKey)) pendingGroupsByLane.set(group.laneKey, []);
       pendingGroupsByLane.get(group.laneKey)!.push(group);
     });
@@ -989,7 +1097,7 @@ function FamilyCanvasGraphComponent({
         });
     });
 
-    const parentGroups: ParentGroup[] = pendingParentGroups.map((group) => {
+    const parentGroups: ParentGroup[] = parentGroupsSeed.map((group) => {
       const laneIndex = laneIndexByGroupId.get(group.id) ?? 0;
       const source = group.parentAnchors.length === 1
         ? group.parentAnchors[0]
@@ -1115,7 +1223,7 @@ function FamilyCanvasGraphComponent({
         {layout.parentGroups.map((group) => {
           const geometry = buildParentGroupGeometry(group);
           return (
-            <g key={group.id}>
+            <g key={group.id} data-group-id={group.id}>
               {geometry.paths.map((path, index) => (
                 <path
                   key={`${group.id}-path-${index}`}
