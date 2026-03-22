@@ -174,7 +174,7 @@ const Index = () => {
         <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-2">
           <div className="flex items-center gap-2.5">
             <TreePine className="w-5 h-5 text-primary" />
-            <h1 className="font-display text-lg text-foreground leading-none">Silsilah Keluarga</h1>
+            <h1 className="font-display text-lg text-foreground leading-none">Safari Tree</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <input

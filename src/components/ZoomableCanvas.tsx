@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ZoomIn, ZoomOut, Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,18 @@ interface DragState {
   startY: number;
   originX: number;
   originY: number;
+}
+
+interface PointerPoint {
+  x: number;
+  y: number;
+}
+
+interface PinchState {
+  startDistance: number;
+  startScale: number;
+  originContentX: number;
+  originContentY: number;
 }
 
 const MIN_SCALE = 0.2;
@@ -49,6 +62,8 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     originX: 0,
     originY: 0,
   });
+  const pointerPositionsRef = useRef<Map<number, PointerPoint>>(new Map());
+  const pinchRef = useRef<PinchState | null>(null);
   const frameRef = useRef<number | null>(null);
   const fitFrameRef = useRef<number | null>(null);
   const needsScaleUpdateRef = useRef(false);
@@ -145,6 +160,62 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       fitToView();
     });
   }, [fitToView]);
+
+  const getPinchMetrics = useCallback(() => {
+    const points = Array.from(pointerPositionsRef.current.values());
+    if (points.length < 2) return null;
+
+    const [first, second] = points;
+    const dx = second.x - first.x;
+    const dy = second.y - first.y;
+
+    return {
+      distance: Math.max(Math.hypot(dx, dy), 1),
+      midpointX: (first.x + second.x) / 2,
+      midpointY: (first.y + second.y) / 2,
+    };
+  }, []);
+
+  const beginPinch = useCallback(() => {
+    const container = containerRef.current;
+    const metrics = getPinchMetrics();
+    if (!container || !metrics) return;
+
+    const rect = container.getBoundingClientRect();
+    const viewportX = metrics.midpointX - rect.left;
+    const viewportY = metrics.midpointY - rect.top;
+    const current = transformRef.current;
+
+    pinchRef.current = {
+      startDistance: metrics.distance,
+      startScale: current.scale,
+      originContentX: (viewportX - current.x) / current.scale,
+      originContentY: (viewportY - current.y) / current.scale,
+    };
+
+    dragRef.current.pointerId = null;
+    setIsDragging(false);
+  }, [getPinchMetrics]);
+
+  const updatePinch = useCallback(() => {
+    const container = containerRef.current;
+    const pinch = pinchRef.current;
+    const metrics = getPinchMetrics();
+    if (!container || !pinch || !metrics) return;
+
+    const rect = container.getBoundingClientRect();
+    const viewportX = metrics.midpointX - rect.left;
+    const viewportY = metrics.midpointY - rect.top;
+    const nextScale = clampScale(pinch.startScale * (metrics.distance / pinch.startDistance));
+
+    transformRef.current = {
+      scale: nextScale,
+      x: viewportX - pinch.originContentX * nextScale,
+      y: viewportY - pinch.originContentY * nextScale,
+    };
+
+    scheduleRender(true);
+  }, [clampScale, getPinchMetrics, scheduleRender]);
 
   const zoomAtClientPoint = useCallback((nextScale: number, clientX: number, clientY: number) => {
     const container = containerRef.current;
@@ -264,6 +335,15 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     if (!container) return;
 
     container.setPointerCapture(e.pointerId);
+    pointerPositionsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pointerPositionsRef.current.size >= 2) {
+      userInteractedRef.current = true;
+      beginPinch();
+      updatePinch();
+      return;
+    }
+
     userInteractedRef.current = true;
     dragRef.current = {
       pointerId: e.pointerId,
@@ -273,9 +353,19 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       originY: transformRef.current.y,
     };
     setIsDragging(true);
-  }, []);
+  }, [beginPinch, updatePinch]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerPositionsRef.current.has(e.pointerId)) {
+      pointerPositionsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    if (pinchRef.current && pointerPositionsRef.current.size >= 2) {
+      userInteractedRef.current = true;
+      updatePinch();
+      return;
+    }
+
     if (dragRef.current.pointerId !== e.pointerId) return;
 
     const dx = e.clientX - dragRef.current.startX;
@@ -286,7 +376,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       y: dragRef.current.originY + dy,
     };
     scheduleRender(false);
-  }, [scheduleRender]);
+  }, [scheduleRender, updatePinch]);
 
   const stopDragging = useCallback((pointerId: number, currentTarget: HTMLDivElement) => {
     if (dragRef.current.pointerId !== pointerId) return;
@@ -295,22 +385,45 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     setIsDragging(false);
   }, []);
 
-  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    stopDragging(e.pointerId, e.currentTarget);
+  const finishPointer = useCallback((pointerId: number, currentTarget: HTMLDivElement) => {
+    pointerPositionsRef.current.delete(pointerId);
+
+    if (pinchRef.current && pointerPositionsRef.current.size < 2) {
+      pinchRef.current = null;
+
+      const [remainingPointerId, remainingPoint] = Array.from(pointerPositionsRef.current.entries())[0] ?? [];
+      if (remainingPointerId !== undefined && remainingPoint) {
+        dragRef.current = {
+          pointerId: remainingPointerId,
+          startX: remainingPoint.x,
+          startY: remainingPoint.y,
+          originX: transformRef.current.x,
+          originY: transformRef.current.y,
+        };
+        setIsDragging(true);
+      }
+    }
+
+    stopDragging(pointerId, currentTarget);
+    if (currentTarget.hasPointerCapture(pointerId)) currentTarget.releasePointerCapture(pointerId);
   }, [stopDragging]);
 
+  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    finishPointer(e.pointerId, e.currentTarget);
+  }, [finishPointer]);
+
   const handlePointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    stopDragging(e.pointerId, e.currentTarget);
-  }, [stopDragging]);
+    finishPointer(e.pointerId, e.currentTarget);
+  }, [finishPointer]);
 
   const handlePointerLeave = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (dragRef.current.pointerId === e.pointerId && e.currentTarget.hasPointerCapture(e.pointerId)) {
       return;
     }
-    stopDragging(e.pointerId, e.currentTarget);
-  }, [stopDragging]);
+    finishPointer(e.pointerId, e.currentTarget);
+  }, [finishPointer]);
 
-  return (
+  const canvas = (
     <div
       ref={wrapperRef}
       className={cn(
@@ -320,7 +433,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
           : "rounded-[28px]",
       )}
       style={{
-        height: isImmersive ? "100dvh" : "min(100dvh - 12rem, 920px)",
+        height: isImmersive ? "100svh" : "min(100dvh - 12rem, 920px)",
         minHeight: isImmersive ? "100dvh" : "clamp(460px, 72dvh, 920px)",
       }}
     >
@@ -387,4 +500,10 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
       </div>
     </div>
   );
+
+  if (isFallbackFullscreen && typeof document !== "undefined") {
+    return createPortal(canvas, document.body);
+  }
+
+  return canvas;
 }
