@@ -1,7 +1,10 @@
 import { createPortal } from "react-dom";
+import { useIsConstrainedMode } from "@/hooks/use-performance-mode";
 import { FamilyMember } from "@/lib/family-data";
+import { formatFamilyDate, getMemberAge, isMemberDeceased } from "@/lib/member-life";
 import { X, Calendar, User, Edit, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface MemberDetailModalProps {
   member: FamilyMember;
@@ -11,7 +14,8 @@ interface MemberDetailModalProps {
 }
 
 export function MemberDetailModal({ member, onClose, onEdit, onDelete }: MemberDetailModalProps) {
-  const isDeceased = !!member.deathDate;
+  const isDeceased = isMemberDeceased(member);
+  const isConstrainedMode = useIsConstrainedMode();
 
   const modal = (
     <div
@@ -19,12 +23,29 @@ export function MemberDetailModal({ member, onClose, onEdit, onDelete }: MemberD
       style={{
         paddingTop: "max(1rem, calc(env(safe-area-inset-top) + 1rem))",
         paddingBottom: "max(1rem, calc(env(safe-area-inset-bottom) + 1rem))",
+        contain: "layout paint style",
+        willChange: "opacity",
       }}
       onClick={onClose}
     >
-      <div className="absolute inset-0 bg-foreground/20 backdrop-blur-sm" />
       <div
-        className="glass-card rounded-2xl p-6 max-w-md w-full relative z-10 animate-reveal-up shadow-2xl"
+        className={cn(
+          "absolute inset-0 bg-foreground/20",
+          !isConstrainedMode && "backdrop-blur-sm",
+        )}
+      />
+      <div
+        className={`glass-card rounded-2xl p-6 max-w-md w-full relative z-10 animate-reveal-up shadow-2xl ${
+          isDeceased ? "border-slate-300/80 bg-slate-100/80" : ""
+        }`}
+        style={{
+          contain: "layout paint style",
+          willChange: "transform, opacity",
+          transform: "translateZ(0)",
+          backdropFilter: isConstrainedMode ? "none" : undefined,
+          WebkitBackdropFilter: isConstrainedMode ? "none" : undefined,
+          backgroundColor: isConstrainedMode ? "hsl(var(--background) / 0.96)" : undefined,
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-secondary transition-colors active:scale-95">
@@ -33,10 +54,14 @@ export function MemberDetailModal({ member, onClose, onEdit, onDelete }: MemberD
 
         <div className="flex items-center gap-4 mb-5">
           {member.avatarUrl ? (
-            <img src={member.avatarUrl} alt={member.name} className="w-20 h-20 rounded-full object-cover ring-2 ring-border" />
+            <img src={member.avatarUrl} alt={member.name} className={`w-20 h-20 rounded-full object-cover ring-2 ring-border ${isDeceased ? "grayscale-[0.35]" : ""}`} />
           ) : (
             <div className={`w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold ${
-              member.gender === "male" ? "bg-primary/15 text-primary" : "bg-accent/15 text-accent"
+              isDeceased
+                ? "bg-slate-200 text-slate-600"
+                : member.gender === "male"
+                  ? "bg-primary/15 text-primary"
+                  : "bg-accent/15 text-accent"
             }`}>
               {member.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
             </div>
@@ -46,6 +71,9 @@ export function MemberDetailModal({ member, onClose, onEdit, onDelete }: MemberD
             <p className="text-sm text-muted-foreground">
               {member.gender === "male" ? "Laki-laki" : "Perempuan"} · Generasi {member.generation}
             </p>
+            <p className="text-xs font-medium text-foreground/80 mt-1">
+              Umur {getMemberAge(member) ?? "-"} tahun
+            </p>
           </div>
         </div>
 
@@ -53,10 +81,10 @@ export function MemberDetailModal({ member, onClose, onEdit, onDelete }: MemberD
           <div className="flex items-start gap-2 text-sm">
             <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="min-w-0 break-words leading-relaxed text-foreground">
-              {new Date(member.birthDate).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+              {formatFamilyDate(member.birthDate, "long")}
               {isDeceased && (
                 <span className="text-muted-foreground">
-                  {" "}– {new Date(member.deathDate!).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+                  {" "}– {formatFamilyDate(member.deathDate, "long")}
                 </span>
               )}
             </span>

@@ -1,11 +1,12 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useFamilyTree } from "@/hooks/useFamilyTree";
 import { MemberDetailModal } from "@/components/MemberDetailModal";
 import { MemberForm, type MemberFormValues } from "@/components/MemberForm";
 import { SearchBar } from "@/components/SearchBar";
 import { ZoomableCanvas } from "@/components/ZoomableCanvas";
 import { FamilyCanvasGraph } from "@/components/FamilyCanvasGraph";
-import { FamilyMember, getChildren, getSpouseIds, hydrateMembers } from "@/lib/family-data";
+import { FamilyMember, getChildren, getSpouseIds, getSpouseRelations, hydrateMembers } from "@/lib/family-data";
+import { formatFamilyDate, getMemberAge, isMemberDeceased } from "@/lib/member-life";
 import { Cloud, CloudOff, Download, Plus, RefreshCw, TreePine, Upload, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -47,6 +48,38 @@ const Index = () => {
     return "Tambah Anggota";
   }, [addIntent, membersById]);
 
+  const editingRelatedSpouses = useMemo(
+    () => (editingMember ? getSpouseIds(editingMember) : [])
+      .map((spouseId) => membersById.get(spouseId))
+      .filter((spouse): spouse is FamilyMember => Boolean(spouse))
+      .map((spouse) => ({ id: spouse.id, name: spouse.name })),
+    [editingMember, membersById],
+  );
+
+  const addRelatedSpouses = useMemo(
+    () => (addIntent?.spouseIds ?? [])
+      .map((spouseId) => membersById.get(spouseId))
+      .filter((spouse): spouse is FamilyMember => Boolean(spouse))
+      .map((spouse) => ({ id: spouse.id, name: spouse.name })),
+    [addIntent?.spouseIds, membersById],
+  );
+
+  const stepChildOption = useMemo(() => {
+    if (addIntent?.relationHint !== "child") return undefined;
+    if (!addIntent.selectedParentId || addIntent.parentIds?.length !== 2) return undefined;
+
+    const stepParent = membersById.get(addIntent.selectedParentId);
+    const biologicalParentId = addIntent.parentIds.find((id) => id !== addIntent.selectedParentId);
+    const biologicalParent = biologicalParentId ? membersById.get(biologicalParentId) : undefined;
+
+    if (!stepParent || !biologicalParent) return undefined;
+
+    return {
+      stepParentName: stepParent.name,
+      biologicalParentName: biologicalParent.name,
+    };
+  }, [addIntent, membersById]);
+
   const syncMeta = useMemo(() => {
     if (syncStatus === "saving") {
       return {
@@ -85,10 +118,20 @@ const Index = () => {
     };
   }, [lastSyncedAt, syncStatus]);
 
-  const addMemberFromForm = (values: MemberFormValues) => {
-    const parentIds = addIntent?.asFamilyHead ? undefined : addIntent?.parentIds;
+  const addMemberFromForm = useCallback((values: MemberFormValues) => {
+    const requestedParentIds = addIntent?.asFamilyHead ? undefined : addIntent?.parentIds;
     const spouseIds = addIntent?.spouseIds;
     const spouseTarget = spouseIds?.[0] ? membersById.get(spouseIds[0]) : undefined;
+    const spouseRelations = spouseIds?.map((spouseId) => ({
+      spouseId,
+      status: values.spouseStatuses?.[spouseId] ?? "married",
+    }));
+    const parentIds = requestedParentIds;
+    const stepParentIds = values.isStepChild
+      && addIntent?.relationHint === "child"
+      && addIntent.selectedParentId
+      ? [addIntent.selectedParentId]
+      : undefined;
 
     let normalizedGender = values.gender;
     if (spouseTarget?.gender === "male") normalizedGender = "female";
@@ -113,40 +156,51 @@ const Index = () => {
       name: values.name,
       gender: normalizedGender,
       birthDate: values.birthDate,
+      deathDate: values.deathDate,
       description: values.description,
       avatarUrl: values.avatarUrl,
       relation: inferRelation(normalizedGender, addIntent?.relationHint),
       generation,
       parentIds: parentIds && parentIds.length > 0 ? parentIds : undefined,
+      stepParentIds,
       spouseIds: spouseIds && spouseIds.length > 0 ? spouseIds : undefined,
+      spouseRelations: spouseRelations && spouseRelations.length > 0 ? spouseRelations : undefined,
       isFamilyHead: Boolean(addIntent?.asFamilyHead),
     });
-  };
+  }, [addIntent, addMember, membersById]);
 
-  const editMemberFromForm = (values: MemberFormValues) => {
+  const editMemberFromForm = useCallback((values: MemberFormValues) => {
     if (!editingMember) return;
+    const spouseRelations = getSpouseRelations(editingMember).map((relation) => ({
+      ...relation,
+      status: values.spouseStatuses?.[relation.spouseId] ?? relation.status ?? "married",
+    }));
+
     updateMember({
       ...editingMember,
       name: values.name,
       gender: values.gender,
       birthDate: values.birthDate,
+      deathDate: values.deathDate,
       description: values.description,
       avatarUrl: values.avatarUrl,
+      spouseRelations: spouseRelations.length > 0 ? spouseRelations : undefined,
     });
-  };
+  }, [editingMember, updateMember]);
 
-  const startAddChild = (parentId: string) => {
+  const startAddChild = useCallback((parentId: string) => {
     const parent = membersById.get(parentId);
     const spouseIds = parent ? getSpouseIds(parent) : [];
     const linkedParentIds = spouseIds.length === 1 ? [parentId, spouseIds[0]] : [parentId];
 
     startAddMember({
       parentIds: linkedParentIds,
+      selectedParentId: parentId,
       relationHint: "child",
     });
-  };
+  }, [membersById, startAddMember]);
 
-  const startAddSpouse = (memberId: string) => {
+  const startAddSpouse = useCallback((memberId: string) => {
     const member = membersById.get(memberId);
     if (!member) return;
     if (member.gender === "female" && getSpouseIds(member).length > 0) return;
@@ -156,9 +210,9 @@ const Index = () => {
       relationHint: "spouse",
       genderHint: member?.gender === "male" ? "female" : "male",
     });
-  };
+  }, [membersById, startAddMember]);
 
-  const handleDeleteMember = (memberId: string) => {
+  const handleDeleteMember = useCallback((memberId: string) => {
     const member = membersById.get(memberId);
     if (!member) return;
 
@@ -175,19 +229,19 @@ const Index = () => {
     deleteMember(memberId);
     setActiveCanvasMemberId((currentId) => (currentId === memberId ? null : currentId));
     setSelectedMember((currentMember) => (currentMember?.id === memberId ? null : currentMember));
-  };
+  }, [deleteMember, members, membersById, setSelectedMember]);
 
-  const handleExportJson = () => {
+  const handleExportJson = useCallback(() => {
     const blob = new Blob([JSON.stringify(members, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "genealogy-elegance-data.json";
+    link.download = "safari-family-data.json";
     link.click();
     URL.revokeObjectURL(url);
-  };
+  }, [members]);
 
-  const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportJson = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -205,15 +259,28 @@ const Index = () => {
     } finally {
       e.target.value = "";
     }
-  };
+  }, [replaceMembers]);
+
+  const handleCanvasSelectMember = useCallback((member: FamilyMember) => {
+    setActiveCanvasMemberId((currentId) => (currentId === member.id ? null : member.id));
+  }, []);
+
+  const handleCanvasClearSelection = useCallback(() => {
+    setActiveCanvasMemberId(null);
+  }, []);
+
+  const handleCanvasEditMember = useCallback((member: FamilyMember) => {
+    setEditingMember(member);
+    setActiveCanvasMemberId(null);
+  }, [setEditingMember]);
 
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 glass-card border-b border-border/50">
         <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-2">
           <div className="flex items-center gap-2.5">
-            <TreePine className="w-5 h-5 text-primary" />
-            <h1 className="font-display text-lg text-foreground leading-none">Safari Tree</h1>
+            <img src="/logo-safari.png" alt="Safari Family" className="h-8 w-8 rounded-xl object-cover ring-1 ring-border/60" />
+            <h1 className="font-display text-lg text-foreground leading-none">safari-family</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <input
@@ -290,7 +357,9 @@ const Index = () => {
                 <button
                   key={member.id}
                   onClick={() => setSelectedMember(member)}
-                  className="glass-card rounded-lg p-4 text-left transition-all duration-300 hover:shadow-lg hover:scale-[1.01] active:scale-[0.99] animate-reveal-up"
+                  className={`glass-card rounded-lg p-4 text-left transition-all duration-300 hover:shadow-lg hover:scale-[1.01] active:scale-[0.99] animate-reveal-up ${
+                    isMemberDeceased(member) ? "border-slate-300/70 bg-slate-100/70" : ""
+                  }`}
                   style={{ animationDelay: `${i * 60}ms` }}
                 >
                   <div className="flex items-center gap-3">
@@ -306,6 +375,13 @@ const Index = () => {
                       <p className="text-xs text-muted-foreground">
                         {member.gender === "male" ? "Laki-laki" : "Perempuan"} · Gen {member.generation}
                       </p>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        {formatFamilyDate(member.birthDate)}
+                        {member.deathDate ? ` - ${formatFamilyDate(member.deathDate)}` : ""}
+                      </p>
+                      <p className="text-[11px] font-medium text-foreground/85">
+                        Umur {getMemberAge(member) ?? "-"} tahun
+                      </p>
                     </div>
                   </div>
                 </button>
@@ -318,14 +394,9 @@ const Index = () => {
               <FamilyCanvasGraph
                 members={members}
                 selectedMemberId={activeCanvasMemberId ?? undefined}
-                onSelectMember={(member) => {
-                  setActiveCanvasMemberId((currentId) => currentId === member.id ? null : member.id);
-                }}
-                onClearSelection={() => setActiveCanvasMemberId(null)}
-                onEditMember={(member) => {
-                  setEditingMember(member);
-                  setActiveCanvasMemberId(null);
-                }}
+                onSelectMember={handleCanvasSelectMember}
+                onClearSelection={handleCanvasClearSelection}
+                onEditMember={handleCanvasEditMember}
                 onAddChild={startAddChild}
                 onAddSpouse={startAddSpouse}
                 onSetFamilyHead={setFamilyHead}
@@ -354,6 +425,7 @@ const Index = () => {
           member={editingMember}
           title={`Edit ${editingMember.name}`}
           submitLabel="Simpan"
+          relatedSpouses={editingRelatedSpouses}
           onSave={editMemberFromForm}
           onCancel={() => setEditingMember(null)}
         />
@@ -364,6 +436,8 @@ const Index = () => {
           title={addDialogTitle}
           submitLabel="Tambah"
           defaultGender={addIntent?.genderHint}
+          relatedSpouses={addRelatedSpouses}
+          stepChildOption={stepChildOption}
           onSave={addMemberFromForm}
           onCancel={cancelAddMember}
         />

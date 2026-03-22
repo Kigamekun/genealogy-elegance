@@ -5,6 +5,8 @@ import {
   hydrateMembers,
   getParentIds,
   getSpouseIds,
+  getSpouseRelations,
+  getSpouseRelationStatus,
   normalizeMemberRelations,
   syncMemberRelations,
 } from "@/lib/family-data";
@@ -19,6 +21,7 @@ export type AddRelationHint = "child" | "spouse" | "head" | "member";
 export interface AddMemberIntent {
   parentIds?: string[];
   spouseIds?: string[];
+  selectedParentId?: string;
   asFamilyHead?: boolean;
   relationHint?: AddRelationHint;
   genderHint?: FamilyMember["gender"];
@@ -29,8 +32,8 @@ function toTime(dateString: string): number {
   return Number.isNaN(value) ? 0 : value;
 }
 
-const STORAGE_KEY = "genealogy-elegance.members.v4";
-const LEGACY_STORAGE_KEYS = ["genealogy-elegance.members.v3"];
+const STORAGE_KEY = "safari-family.members.v1";
+const LEGACY_STORAGE_KEYS = ["genealogy-elegance.members.v4", "genealogy-elegance.members.v3"];
 const CLOUD_POLL_INTERVAL_MS = 12000;
 
 function loadMembersFromStorage(): FamilyMember[] {
@@ -67,28 +70,33 @@ function applyFamilyRules(members: FamilyMember[]): FamilyMember[] {
   const normalized = members.map((member) => normalizeMemberRelations(member));
   const normalizedById = new Map(normalized.map((member) => [member.id, member]));
 
-  const candidatesByWife = new Map<string, Set<string>>();
-  const registerPair = (husbandId: string, wifeId: string) => {
-    if (!candidatesByWife.has(wifeId)) candidatesByWife.set(wifeId, new Set());
-    candidatesByWife.get(wifeId)!.add(husbandId);
+  const candidatesByWife = new Map<string, Map<string, "married" | "divorced">>();
+  const registerPair = (husbandId: string, wifeId: string, status: "married" | "divorced") => {
+    if (!candidatesByWife.has(wifeId)) candidatesByWife.set(wifeId, new Map());
+    const husbandMap = candidatesByWife.get(wifeId)!;
+    const currentStatus = husbandMap.get(husbandId);
+    husbandMap.set(husbandId, currentStatus === "divorced" || status === "divorced" ? "divorced" : "married");
   };
 
   for (const member of normalized) {
-    for (const spouseId of getSpouseIds(member)) {
-      const spouse = normalizedById.get(spouseId);
+    for (const relation of getSpouseRelations(member)) {
+      const spouse = normalizedById.get(relation.spouseId);
       if (!spouse) continue;
+      const relationStatus = relation.status === "divorced" || getSpouseRelationStatus(spouse, member.id) === "divorced"
+        ? "divorced"
+        : "married";
 
       if (member.gender === "male" && spouse.gender === "female") {
-        registerPair(member.id, spouse.id);
+        registerPair(member.id, spouse.id, relationStatus);
       } else if (member.gender === "female" && spouse.gender === "male") {
-        registerPair(spouse.id, member.id);
+        registerPair(spouse.id, member.id, relationStatus);
       }
     }
   }
 
-  const wivesByHusband = new Map<string, Set<string>>();
+  const wivesByHusband = new Map<string, Array<{ wifeId: string; status: "married" | "divorced" }>>();
   for (const [wifeId, husbandCandidates] of candidatesByWife.entries()) {
-    const selectedHusbandId = Array.from(husbandCandidates).sort((leftId, rightId) => {
+    const selectedHusbandId = Array.from(husbandCandidates.keys()).sort((leftId, rightId) => {
       const left = normalizedById.get(leftId);
       const right = normalizedById.get(rightId);
       if (!left || !right) return leftId.localeCompare(rightId);
@@ -96,8 +104,11 @@ function applyFamilyRules(members: FamilyMember[]): FamilyMember[] {
     })[0];
 
     if (!selectedHusbandId) continue;
-    if (!wivesByHusband.has(selectedHusbandId)) wivesByHusband.set(selectedHusbandId, new Set());
-    wivesByHusband.get(selectedHusbandId)!.add(wifeId);
+    if (!wivesByHusband.has(selectedHusbandId)) wivesByHusband.set(selectedHusbandId, []);
+    wivesByHusband.get(selectedHusbandId)!.push({
+      wifeId,
+      status: husbandCandidates.get(selectedHusbandId) === "divorced" ? "divorced" : "married",
+    });
   }
 
   const reconciledMap = new Map(
@@ -105,29 +116,39 @@ function applyFamilyRules(members: FamilyMember[]): FamilyMember[] {
       member.id,
       normalizeMemberRelations({
         ...member,
+        spouseRelations: undefined,
         spouseIds: undefined,
         spouseId: undefined,
       }),
     ]),
   );
 
-  for (const [husbandId, wifeIdsSet] of wivesByHusband.entries()) {
+  for (const [husbandId, wifeEntries] of wivesByHusband.entries()) {
     const husband = reconciledMap.get(husbandId);
     if (!husband || husband.gender !== "male") continue;
 
-    const wifeIds = Array.from(wifeIdsSet).sort((leftId, rightId) => {
-      const left = reconciledMap.get(leftId);
-      const right = reconciledMap.get(rightId);
-      if (!left || !right) return leftId.localeCompare(rightId);
+    const sortedWifeEntries = [...wifeEntries].sort((leftEntry, rightEntry) => {
+      const left = reconciledMap.get(leftEntry.wifeId);
+      const right = reconciledMap.get(rightEntry.wifeId);
+      if (!left || !right) return leftEntry.wifeId.localeCompare(rightEntry.wifeId);
       return toTime(left.birthDate) - toTime(right.birthDate) || left.id.localeCompare(right.id);
     });
+    const wifeIds = sortedWifeEntries.map((entry) => entry.wifeId);
 
+    husband.spouseRelations = sortedWifeEntries.map((entry) => ({
+      spouseId: entry.wifeId,
+      status: entry.status,
+    }));
     husband.spouseIds = wifeIds;
     husband.spouseId = wifeIds[0];
 
-    for (const wifeId of wifeIds) {
-      const wife = reconciledMap.get(wifeId);
+    for (const entry of sortedWifeEntries) {
+      const wife = reconciledMap.get(entry.wifeId);
       if (!wife || wife.gender !== "female") continue;
+      wife.spouseRelations = [{
+        spouseId: husbandId,
+        status: entry.status,
+      }];
       wife.spouseIds = [husbandId];
       wife.spouseId = husbandId;
     }
@@ -313,6 +334,7 @@ export function useFamilyTree() {
         const spouseIds = getSpouseIds(member).filter((spouseId) => spouseId !== updated.id);
         return normalizeMemberRelations({
           ...member,
+          spouseRelations: getSpouseRelations(member).filter((relation) => relation.spouseId !== updated.id),
           spouseIds: spouseIds.length > 0 ? spouseIds : undefined,
         });
       });
@@ -333,6 +355,7 @@ export function useFamilyTree() {
           return normalizeMemberRelations({
             ...member,
             parentIds: parentIds.length > 0 ? parentIds : undefined,
+            spouseRelations: getSpouseRelations(member).filter((relation) => relation.spouseId !== id),
             spouseIds: spouseIds.length > 0 ? spouseIds : undefined,
           });
         });
@@ -392,6 +415,10 @@ export function useFamilyTree() {
         if (member.id === husbandId) {
           return normalizeMemberRelations({
             ...member,
+            spouseRelations: [
+              ...getSpouseRelations(member),
+              { spouseId: wifeId, status: "married" },
+            ],
             spouseIds: Array.from(new Set([...getSpouseIds(member), wifeId])),
           });
         }
@@ -399,6 +426,7 @@ export function useFamilyTree() {
         if (member.id === wifeId) {
           return normalizeMemberRelations({
             ...member,
+            spouseRelations: [{ spouseId: husbandId, status: "married" }],
             spouseIds: [husbandId],
           });
         }
@@ -406,6 +434,7 @@ export function useFamilyTree() {
         if (member.gender === "male" && getSpouseIds(member).includes(wifeId)) {
           return normalizeMemberRelations({
             ...member,
+            spouseRelations: getSpouseRelations(member).filter((relation) => relation.spouseId !== wifeId),
             spouseIds: getSpouseIds(member).filter((id) => id !== wifeId),
           });
         }

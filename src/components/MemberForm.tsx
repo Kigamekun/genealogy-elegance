@@ -1,16 +1,21 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { FamilyMember } from "@/lib/family-data";
+import { useIsConstrainedMode } from "@/hooks/use-performance-mode";
+import { FamilyMember, getSpouseRelations, type SpouseRelationStatus } from "@/lib/family-data";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ImagePlus, Trash2, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface MemberFormValues {
   name: string;
   gender: FamilyMember["gender"];
   birthDate: string;
+  deathDate?: string;
   description: string;
   avatarUrl?: string;
+  isStepChild?: boolean;
+  spouseStatuses?: Record<string, SpouseRelationStatus>;
 }
 
 interface MemberFormProps {
@@ -18,6 +23,11 @@ interface MemberFormProps {
   title?: string;
   submitLabel?: string;
   defaultGender?: FamilyMember["gender"];
+  relatedSpouses?: Array<{ id: string; name: string }>;
+  stepChildOption?: {
+    stepParentName: string;
+    biologicalParentName: string;
+  };
   onSave: (values: MemberFormValues) => void;
   onCancel: () => void;
 }
@@ -50,9 +60,95 @@ function getDaysInMonth(month: string, year: string): number {
   return new Date(yearNumber, monthNumber, 0).getDate();
 }
 
-function buildBirthDate(year: string, month: string, day: string): string {
+function buildDateValue(year: string, month: string, day: string): string {
   if (!year || !month || !day) return "";
   return `${year.padStart(4, "0")}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+}
+
+function DateFieldGroup({
+  id,
+  label,
+  day,
+  month,
+  year,
+  required = false,
+  onDayChange,
+  onMonthChange,
+  onYearChange,
+}: {
+  id: string;
+  label: string;
+  day: string;
+  month: string;
+  year: string;
+  required?: boolean;
+  onDayChange: (value: string) => void;
+  onMonthChange: (value: string) => void;
+  onYearChange: (value: string) => void;
+}) {
+  const maxDay = useMemo(() => getDaysInMonth(month, year), [month, year]);
+  const dayOptions = useMemo(
+    () => Array.from({ length: maxDay }, (_, index) => String(index + 1).padStart(2, "0")),
+    [maxDay],
+  );
+
+  return (
+    <div>
+      <label htmlFor={id} className="text-xs font-medium text-muted-foreground mb-1 block">
+        {label}
+        {required ? " *" : ""}
+      </label>
+      <div id={id} className="grid grid-cols-[0.9fr_1.1fr_1fr] gap-2">
+        <select
+          value={day}
+          onChange={(e) => onDayChange(e.target.value)}
+          required={required}
+          className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-ring"
+        >
+          <option value="">Tanggal</option>
+          {dayOptions.map((itemDay) => (
+            <option key={itemDay} value={itemDay}>{itemDay}</option>
+          ))}
+        </select>
+        <select
+          value={month}
+          onChange={(e) => {
+            const nextMonth = e.target.value;
+            const cappedMaxDay = getDaysInMonth(nextMonth, year);
+            onMonthChange(nextMonth);
+            if (Number(day) > cappedMaxDay) {
+              onDayChange(String(cappedMaxDay).padStart(2, "0"));
+            }
+          }}
+          required={required}
+          className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-ring"
+        >
+          <option value="">Bulan</option>
+          {MONTH_OPTIONS.map((itemMonth) => (
+            <option key={itemMonth.value} value={itemMonth.value}>{itemMonth.label}</option>
+          ))}
+        </select>
+        <Input
+          type="number"
+          inputMode="numeric"
+          min="1800"
+          max={`${new Date().getFullYear() + 1}`}
+          value={year}
+          onChange={(e) => {
+            const nextYear = e.target.value.replace(/\D/g, "").slice(0, 4);
+            const cappedMaxDay = getDaysInMonth(month, nextYear);
+            onYearChange(nextYear);
+            if (Number(day) > cappedMaxDay) {
+              onDayChange(String(cappedMaxDay).padStart(2, "0"));
+            }
+          }}
+          placeholder="Tahun"
+          required={required}
+          className="h-11 text-sm"
+        />
+      </div>
+    </div>
+  );
 }
 
 export function MemberForm({
@@ -60,23 +156,43 @@ export function MemberForm({
   title,
   submitLabel,
   defaultGender = "male",
+  relatedSpouses = [],
+  stepChildOption,
   onSave,
   onCancel,
 }: MemberFormProps) {
+  const isConstrainedMode = useIsConstrainedMode();
   const initialDateParts = splitDateParts(member?.birthDate ?? new Date().toISOString().slice(0, 10));
+  const todayParts = splitDateParts(new Date().toISOString().slice(0, 10));
+  const initialDeathDateParts = splitDateParts(member?.deathDate ?? "");
+  const initialSpouseStatuses = useMemo(() => {
+    const relationshipMap = new Map(
+      (member ? getSpouseRelations(member) : []).map((relation) => [relation.spouseId, relation.status ?? "married"]),
+    );
+
+    return Object.fromEntries(
+      relatedSpouses.map((spouse) => [spouse.id, relationshipMap.get(spouse.id) ?? "married"]),
+    ) as Record<string, SpouseRelationStatus>;
+  }, [member, relatedSpouses]);
   const [name, setName] = useState(member?.name ?? "");
   const [gender, setGender] = useState<FamilyMember["gender"]>(member?.gender ?? defaultGender);
   const [birthYear, setBirthYear] = useState(initialDateParts.year);
   const [birthMonth, setBirthMonth] = useState(initialDateParts.month);
   const [birthDay, setBirthDay] = useState(initialDateParts.day);
+  const [isDeceased, setIsDeceased] = useState(Boolean(member?.deathDate));
+  const [deathYear, setDeathYear] = useState(initialDeathDateParts.year || todayParts.year);
+  const [deathMonth, setDeathMonth] = useState(initialDeathDateParts.month || todayParts.month);
+  const [deathDay, setDeathDay] = useState(initialDeathDateParts.day || todayParts.day);
   const [description, setDescription] = useState(member?.description ?? "");
   const [avatarUrl, setAvatarUrl] = useState(member?.avatarUrl ?? "");
+  const [isStepChild, setIsStepChild] = useState(false);
+  const [spouseStatuses, setSpouseStatuses] = useState<Record<string, SpouseRelationStatus>>(initialSpouseStatuses);
   const [avatarError, setAvatarError] = useState("");
-  const birthDate = useMemo(() => buildBirthDate(birthYear, birthMonth, birthDay), [birthDay, birthMonth, birthYear]);
-  const maxDay = useMemo(() => getDaysInMonth(birthMonth, birthYear), [birthMonth, birthYear]);
-  const dayOptions = useMemo(
-    () => Array.from({ length: maxDay }, (_, index) => String(index + 1).padStart(2, "0")),
-    [maxDay],
+  const [formError, setFormError] = useState("");
+  const birthDate = useMemo(() => buildDateValue(birthYear, birthMonth, birthDay), [birthDay, birthMonth, birthYear]);
+  const deathDate = useMemo(
+    () => (isDeceased ? buildDateValue(deathYear, deathMonth, deathDay) : ""),
+    [deathDay, deathMonth, deathYear, isDeceased],
   );
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -102,13 +218,23 @@ export function MemberForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !birthDate) return;
+    if (isDeceased && !deathDate) return;
+    if (isDeceased && deathDate < birthDate) {
+      setFormError("Tanggal meninggal tidak boleh lebih awal dari tanggal lahir.");
+      return;
+    }
+
+    setFormError("");
 
     onSave({
       name: name.trim(),
       gender,
       birthDate,
+      deathDate: isDeceased ? deathDate : undefined,
       description: description.trim(),
       avatarUrl: avatarUrl || undefined,
+      isStepChild,
+      spouseStatuses,
     });
   };
 
@@ -118,12 +244,27 @@ export function MemberForm({
       style={{
         paddingTop: "max(1rem, calc(env(safe-area-inset-top) + 1rem))",
         paddingBottom: "max(1rem, calc(env(safe-area-inset-bottom) + 1rem))",
+        contain: "layout paint style",
+        willChange: "opacity",
       }}
       onClick={onCancel}
     >
-      <div className="absolute inset-0 bg-foreground/20 backdrop-blur-sm" />
+      <div
+        className={cn(
+          "absolute inset-0 bg-foreground/20",
+          !isConstrainedMode && "backdrop-blur-sm",
+        )}
+      />
       <div
         className="glass-card rounded-2xl p-6 max-w-md w-full relative z-10 animate-reveal-up shadow-2xl"
+        style={{
+          contain: "layout paint style",
+          willChange: "transform, opacity",
+          transform: "translateZ(0)",
+          backdropFilter: isConstrainedMode ? "none" : undefined,
+          WebkitBackdropFilter: isConstrainedMode ? "none" : undefined,
+          backgroundColor: isConstrainedMode ? "hsl(var(--background) / 0.96)" : undefined,
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -210,60 +351,141 @@ export function MemberForm({
             </div>
           </div>
 
+          <DateFieldGroup
+            id="member-birthdate"
+            label="Tanggal Lahir"
+            day={birthDay}
+            month={birthMonth}
+            year={birthYear}
+            required
+            onDayChange={setBirthDay}
+            onMonthChange={setBirthMonth}
+            onYearChange={setBirthYear}
+          />
+
           <div>
-            <label htmlFor="member-birthdate" className="text-xs font-medium text-muted-foreground mb-1 block">
-              Tanggal Lahir *
-            </label>
-            <div id="member-birthdate" className="grid grid-cols-[0.9fr_1.1fr_1fr] gap-2">
-              <select
-                value={birthDay}
-                onChange={(e) => setBirthDay(e.target.value)}
-                required
-                className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-ring"
-              >
-                <option value="">Tanggal</option>
-                {dayOptions.map((day) => (
-                  <option key={day} value={day}>{day}</option>
-                ))}
-              </select>
-              <select
-                value={birthMonth}
-                onChange={(e) => {
-                  const nextMonth = e.target.value;
-                  const cappedMaxDay = getDaysInMonth(nextMonth, birthYear);
-                  setBirthMonth(nextMonth);
-                  if (Number(birthDay) > cappedMaxDay) {
-                    setBirthDay(String(cappedMaxDay).padStart(2, "0"));
-                  }
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Status Kehidupan</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDeceased(false);
+                  setFormError("");
                 }}
-                required
-                className="h-11 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-ring"
+                className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  !isDeceased ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
+                }`}
               >
-                <option value="">Bulan</option>
-                {MONTH_OPTIONS.map((month) => (
-                  <option key={month.value} value={month.value}>{month.label}</option>
-                ))}
-              </select>
-              <Input
-                type="number"
-                inputMode="numeric"
-                min="1800"
-                max={`${new Date().getFullYear() + 1}`}
-                value={birthYear}
-                onChange={(e) => {
-                  const nextYear = e.target.value.replace(/\D/g, "").slice(0, 4);
-                  const cappedMaxDay = getDaysInMonth(birthMonth, nextYear);
-                  setBirthYear(nextYear);
-                  if (Number(birthDay) > cappedMaxDay) {
-                    setBirthDay(String(cappedMaxDay).padStart(2, "0"));
-                  }
+                Masih hidup
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDeceased(true);
+                  setFormError("");
                 }}
-                placeholder="Tahun"
-                required
-                className="h-11 text-sm"
-              />
+                className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  isDeceased ? "bg-secondary-foreground text-secondary" : "bg-secondary text-secondary-foreground"
+                }`}
+              >
+                Sudah meninggal
+              </button>
             </div>
           </div>
+
+          {isDeceased && (
+            <DateFieldGroup
+              id="member-deathdate"
+              label="Tanggal Meninggal"
+              day={deathDay}
+              month={deathMonth}
+              year={deathYear}
+              required
+              onDayChange={setDeathDay}
+              onMonthChange={setDeathMonth}
+              onYearChange={setDeathYear}
+            />
+          )}
+
+          {relatedSpouses.length > 0 && (
+            <div className="rounded-2xl border border-border/60 bg-background/60 p-4 space-y-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Status Hubungan</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Jika dipilih cerai, garis pasangan akan tampil merah di kanvas.
+                </p>
+              </div>
+              {relatedSpouses.map((spouse) => {
+                const currentStatus = spouseStatuses[spouse.id] ?? "married";
+
+                return (
+                  <div key={spouse.id} className="flex flex-col gap-2 rounded-xl border border-border/50 bg-background/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{spouse.name}</p>
+                      <p className="text-[11px] text-muted-foreground">Atur status relasi pasangan ini.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:min-w-[220px]">
+                      <button
+                        type="button"
+                        onClick={() => setSpouseStatuses((prev) => ({ ...prev, [spouse.id]: "married" }))}
+                        className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                          currentStatus === "married"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-secondary text-secondary-foreground"
+                        }`}
+                      >
+                        Menikah
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSpouseStatuses((prev) => ({ ...prev, [spouse.id]: "divorced" }))}
+                        className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                          currentStatus === "divorced"
+                            ? "bg-destructive text-destructive-foreground"
+                            : "bg-secondary text-secondary-foreground"
+                        }`}
+                      >
+                        Cerai
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {stepChildOption && (
+            <div className="rounded-2xl border border-border/60 bg-background/60 p-4 space-y-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Relasi Anak</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Centang jika anak ini adalah anak sambung untuk {stepChildOption.stepParentName}. Layout keluarga tetap sama, hanya jalur anak ini yang akan berwarna oranye.
+                </p>
+              </div>
+              <label className="flex items-start gap-3 rounded-xl border border-border/50 bg-background/70 p-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isStepChild}
+                  onChange={(e) => setIsStepChild(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-border text-destructive focus:ring-destructive"
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-foreground">
+                    Anak sambung untuk {stepChildOption.stepParentName}
+                  </span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    Anak tetap berada di keluarga {stepChildOption.biologicalParentName} seperti biasa, hanya penanda garisnya yang berubah oranye.
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
+
+          {formError && (
+            <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              {formError}
+            </p>
+          )}
 
           <div>
             <label htmlFor="member-description" className="text-xs font-medium text-muted-foreground mb-1 block">Deskripsi Singkat</label>

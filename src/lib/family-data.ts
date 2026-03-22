@@ -1,5 +1,12 @@
 import initialMembersData from "@/data/family-tree.initial.json";
 
+export type SpouseRelationStatus = "married" | "divorced";
+
+export interface SpouseRelation {
+  spouseId: string;
+  status?: SpouseRelationStatus;
+}
+
 export interface FamilyMember {
   id: string;
   name: string;
@@ -12,13 +19,41 @@ export interface FamilyMember {
   parentId?: string;
   spouseId?: string;
   parentIds?: string[];
+  stepParentIds?: string[];
   spouseIds?: string[];
+  spouseRelations?: SpouseRelation[];
   isFamilyHead?: boolean;
   generation: number;
 }
 
 function uniqueIds(ids: Array<string | undefined>): string[] {
   return Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
+}
+
+function normalizeSpouseRelationStatus(status?: string): SpouseRelationStatus {
+  return status === "divorced" ? "divorced" : "married";
+}
+
+function mergeSpouseRelationStatus(
+  left?: SpouseRelationStatus,
+  right?: SpouseRelationStatus,
+): SpouseRelationStatus {
+  return left === "divorced" || right === "divorced" ? "divorced" : "married";
+}
+
+function uniqueSpouseRelations(relations: Array<SpouseRelation | undefined>): SpouseRelation[] {
+  const relationMap = new Map<string, SpouseRelationStatus>();
+
+  relations.forEach((relation) => {
+    const spouseId = typeof relation?.spouseId === "string" ? relation.spouseId.trim() : "";
+    if (!spouseId) return;
+
+    const nextStatus = normalizeSpouseRelationStatus(relation.status);
+    const currentStatus = relationMap.get(spouseId);
+    relationMap.set(spouseId, mergeSpouseRelationStatus(currentStatus, nextStatus));
+  });
+
+  return Array.from(relationMap.entries()).map(([spouseId, status]) => ({ spouseId, status }));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -52,8 +87,22 @@ function coerceMember(raw: unknown): FamilyMember | null {
     parentIds: Array.isArray(raw.parentIds)
       ? raw.parentIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
       : undefined,
+    stepParentIds: Array.isArray(raw.stepParentIds)
+      ? raw.stepParentIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      : undefined,
     spouseIds: Array.isArray(raw.spouseIds)
       ? raw.spouseIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      : undefined,
+    spouseRelations: Array.isArray(raw.spouseRelations)
+      ? raw.spouseRelations
+        .filter((value): value is Record<string, unknown> => isRecord(value))
+        .map((relation) => ({
+          spouseId: typeof relation.spouseId === "string" ? relation.spouseId.trim() : "",
+          status: normalizeSpouseRelationStatus(
+            typeof relation.status === "string" ? relation.status : undefined,
+          ),
+        }))
+        .filter((relation) => relation.spouseId.length > 0)
       : undefined,
     isFamilyHead: Boolean(raw.isFamilyHead),
     generation: Math.max(1, Math.round(generation)),
@@ -74,13 +123,45 @@ export function getParentIds(member: FamilyMember): string[] {
   return uniqueIds([...(member.parentIds ?? []), member.parentId]);
 }
 
+export function getExplicitStepParentIds(member: FamilyMember): string[] {
+  return uniqueIds(member.stepParentIds ?? []).filter((id) => id !== member.id);
+}
+
+export function getSpouseRelations(member: FamilyMember): SpouseRelation[] {
+  const explicitRelations = Array.isArray(member.spouseRelations)
+    ? member.spouseRelations
+      .filter((relation): relation is SpouseRelation => typeof relation?.spouseId === "string")
+      .map((relation) => ({
+        spouseId: relation.spouseId.trim(),
+        status: normalizeSpouseRelationStatus(relation.status),
+      }))
+      .filter((relation) => relation.spouseId.length > 0)
+    : [];
+  const legacyRelations = uniqueIds([...(member.spouseIds ?? []), member.spouseId]).map((spouseId) => ({
+    spouseId,
+    status: "married" as const,
+  }));
+
+  return uniqueSpouseRelations([...explicitRelations, ...legacyRelations])
+    .filter((relation) => relation.spouseId !== member.id);
+}
+
 export function getSpouseIds(member: FamilyMember): string[] {
-  return uniqueIds([...(member.spouseIds ?? []), member.spouseId]).filter((id) => id !== member.id);
+  return getSpouseRelations(member).map((relation) => relation.spouseId);
+}
+
+export function getSpouseRelationStatus(
+  member: FamilyMember,
+  spouseId: string,
+): SpouseRelationStatus {
+  return getSpouseRelations(member).find((relation) => relation.spouseId === spouseId)?.status ?? "married";
 }
 
 export function normalizeMemberRelations(member: FamilyMember): FamilyMember {
   const parentIds = getParentIds(member);
-  const spouseIds = getSpouseIds(member);
+  const spouseRelations = getSpouseRelations(member);
+  const spouseIds = spouseRelations.map((relation) => relation.spouseId);
+  const stepParentIds = getExplicitStepParentIds(member).filter((parentId) => parentIds.includes(parentId));
 
   return {
     ...member,
@@ -88,6 +169,8 @@ export function normalizeMemberRelations(member: FamilyMember): FamilyMember {
     description: member.description ?? "",
     parentIds: parentIds.length > 0 ? parentIds : undefined,
     parentId: parentIds[0],
+    stepParentIds: stepParentIds.length > 0 ? stepParentIds : undefined,
+    spouseRelations: spouseRelations.length > 0 ? spouseRelations : undefined,
     spouseIds: spouseIds.length > 0 ? spouseIds : undefined,
     spouseId: spouseIds[0],
   };
@@ -100,25 +183,39 @@ export function syncMemberRelations(members: FamilyMember[]): FamilyMember[] {
 
   for (const member of normalized.values()) {
     const parentIds = getParentIds(member).filter((parentId) => parentId !== member.id && normalized.has(parentId));
-    const spouseIds = getSpouseIds(member).filter((spouseId) => spouseId !== member.id && normalized.has(spouseId));
+    const stepParentIds = getExplicitStepParentIds(member)
+      .filter((parentId) => parentIds.includes(parentId) && normalized.has(parentId));
+    const spouseRelations = getSpouseRelations(member)
+      .filter((relation) => relation.spouseId !== member.id && normalized.has(relation.spouseId));
+    const spouseIds = spouseRelations.map((relation) => relation.spouseId);
 
     member.parentIds = parentIds.length > 0 ? parentIds : undefined;
     member.parentId = parentIds[0];
+    member.stepParentIds = stepParentIds.length > 0 ? stepParentIds : undefined;
+    member.spouseRelations = spouseRelations.length > 0 ? spouseRelations : undefined;
     member.spouseIds = spouseIds.length > 0 ? spouseIds : undefined;
     member.spouseId = spouseIds[0];
   }
 
   for (const member of normalized.values()) {
-    for (const spouseId of getSpouseIds(member)) {
-      const spouse = normalized.get(spouseId);
+    for (const relation of getSpouseRelations(member)) {
+      const spouse = normalized.get(relation.spouseId);
       if (!spouse) continue;
 
-      const reciprocalSpouseIds = new Set(getSpouseIds(spouse));
-      reciprocalSpouseIds.add(member.id);
-      const spouseIds = Array.from(reciprocalSpouseIds);
+      const reciprocalStatus = mergeSpouseRelationStatus(
+        relation.status,
+        getSpouseRelationStatus(spouse, member.id),
+      );
+      const spouseRelations = uniqueSpouseRelations([
+        ...getSpouseRelations(spouse),
+        { spouseId: member.id, status: reciprocalStatus },
+      ]);
 
-      spouse.spouseIds = spouseIds.length > 0 ? spouseIds : undefined;
-      spouse.spouseId = spouseIds[0];
+      spouse.spouseRelations = spouseRelations.length > 0 ? spouseRelations : undefined;
+      spouse.spouseIds = spouseRelations.length > 0
+        ? spouseRelations.map((entry) => entry.spouseId)
+        : undefined;
+      spouse.spouseId = spouse.spouseIds?.[0];
     }
   }
 
@@ -160,12 +257,26 @@ export function getFamilyChildren(members: FamilyMember[], memberId: string): Fa
     .sort((a, b) => a.birthDate.localeCompare(b.birthDate));
 }
 
-export function isStepChildForMember(members: FamilyMember[], child: FamilyMember, memberId: string): boolean {
-  const parentIds = getParentIds(child);
-  if (parentIds.includes(memberId)) return false;
+export function getStepParentIds(members: FamilyMember[], child: FamilyMember): string[] {
+  const explicitStepParentIds = getExplicitStepParentIds(child);
+  if (explicitStepParentIds.length > 0) return explicitStepParentIds;
 
-  const spouseIds = new Set(getSpouses(members, memberId).map((spouse) => spouse.id));
-  return parentIds.some((parentId) => spouseIds.has(parentId));
+  const parentIds = getParentIds(child);
+  if (parentIds.length === 0) return [];
+
+  const stepParentIds = new Set<string>();
+  parentIds.forEach((parentId) => {
+    getSpouses(members, parentId)
+      .map((spouse) => spouse.id)
+      .filter((spouseId) => !parentIds.includes(spouseId))
+      .forEach((spouseId) => stepParentIds.add(spouseId));
+  });
+
+  return Array.from(stepParentIds);
+}
+
+export function isStepChildForMember(members: FamilyMember[], child: FamilyMember, memberId: string): boolean {
+  return getStepParentIds(members, child).includes(memberId);
 }
 
 export function getRootMembers(members: FamilyMember[]): FamilyMember[] {

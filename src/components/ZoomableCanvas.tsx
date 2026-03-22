@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ZoomIn, ZoomOut, Maximize2, Minimize2, RotateCcw } from "lucide-react";
+import { useIsConstrainedMode } from "@/hooks/use-performance-mode";
 import { cn } from "@/lib/utils";
 
 interface ZoomableCanvasProps {
@@ -67,7 +68,9 @@ function shouldIgnoreTouchPanTarget(target: EventTarget | null): boolean {
 export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
   const [scalePercent, setScalePercent] = useState(100);
   const [isDragging, setIsDragging] = useState(false);
+  const [isPinching, setIsPinching] = useState(false);
   const [isFallbackFullscreen, setIsFallbackFullscreen] = useState(false);
+  const isConstrainedMode = useIsConstrainedMode();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -98,6 +101,8 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     if (!contentRef.current) return;
     const { x, y, scale } = transformRef.current;
     contentRef.current.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
+    contentRef.current.style.backfaceVisibility = "hidden";
+    contentRef.current.style.webkitBackfaceVisibility = "hidden";
   }, []);
 
   const scheduleRender = useCallback((updateScale = false) => {
@@ -202,6 +207,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     dragRef.current.pointerId = null;
     touchDragRef.current.touchId = null;
     setIsDragging(false);
+    setIsPinching(true);
   }, [getPinchMetricsFromPoints]);
 
   const updatePinch = useCallback((first: PointerPoint, second: PointerPoint) => {
@@ -255,6 +261,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     dragRef.current.pointerId = null;
     clearTouchDrag();
     userInteractedRef.current = false;
+    setIsPinching(false);
     scheduleFitToView();
   }, [clearTouchDrag, isFallbackFullscreen, scheduleFitToView]);
 
@@ -500,6 +507,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     }
 
     pinchRef.current = null;
+    setIsPinching(false);
 
     if (remainingTouches.length === 1) {
       beginTouchDrag(remainingTouches[0], remainingTouches[0].target, false);
@@ -512,6 +520,7 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
 
   const handleNativeTouchCancel = useCallback(() => {
     pinchRef.current = null;
+    setIsPinching(false);
     clearTouchDrag();
   }, [clearTouchDrag]);
 
@@ -533,18 +542,29 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
     };
   }, [handleNativeTouchCancel, handleNativeTouchEnd, handleNativeTouchMove, handleNativeTouchStart, isFallbackFullscreen]);
 
+  const shouldLightenCanvasEffects = isConstrainedMode && (isDragging || isPinching || isImmersive);
+  const floatingChromeClassName = cn(
+    "rounded-2xl border border-border transition-colors shadow-sm",
+    shouldLightenCanvasEffects ? "bg-background/94" : "bg-background/88 backdrop-blur-sm",
+  );
+
   const canvas = (
     <div
       ref={wrapperRef}
       className={cn(
         "relative w-full overflow-hidden select-none border border-border bg-card/30 transition-[height,border-radius,background-color] duration-300",
+        isConstrainedMode && "canvas-performance-lite",
+        shouldLightenCanvasEffects && "canvas-performance-moving",
         isImmersive
           ? "fixed inset-0 z-[80] rounded-none border-0 bg-background"
           : "rounded-[28px]",
       )}
+      data-performance-mode={isConstrainedMode ? "lite" : "default"}
+      data-canvas-moving={shouldLightenCanvasEffects ? "true" : "false"}
       style={{
         height: isImmersive ? "100svh" : "min(100dvh - 12rem, 920px)",
         minHeight: isImmersive ? "100dvh" : "clamp(460px, 72dvh, 920px)",
+        contain: "layout paint style",
       }}
     >
       {/* Zoom controls */}
@@ -555,26 +575,30 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
           right: isImmersive ? "calc(env(safe-area-inset-right) + 12px)" : "12px",
         }}
       >
-        <button onClick={zoomIn} title="Perbesar" className="p-2.5 rounded-2xl bg-background/88 backdrop-blur-sm border border-border hover:bg-secondary transition-colors active:scale-95 shadow-sm">
+        <button data-canvas-floating="true" onClick={zoomIn} title="Perbesar" className={cn("p-2.5 hover:bg-secondary active:scale-95", floatingChromeClassName)}>
           <ZoomIn className="w-4 h-4 text-foreground" />
         </button>
-        <button onClick={zoomOut} title="Perkecil" className="p-2.5 rounded-2xl bg-background/88 backdrop-blur-sm border border-border hover:bg-secondary transition-colors active:scale-95 shadow-sm">
+        <button data-canvas-floating="true" onClick={zoomOut} title="Perkecil" className={cn("p-2.5 hover:bg-secondary active:scale-95", floatingChromeClassName)}>
           <ZoomOut className="w-4 h-4 text-foreground" />
         </button>
-        <button onClick={resetView} title="Reset tampilan" className="p-2.5 rounded-2xl bg-background/88 backdrop-blur-sm border border-border hover:bg-secondary transition-colors active:scale-95 shadow-sm">
+        <button data-canvas-floating="true" onClick={resetView} title="Reset tampilan" className={cn("p-2.5 hover:bg-secondary active:scale-95", floatingChromeClassName)}>
           <RotateCcw className="w-4 h-4 text-foreground" />
         </button>
-        <button onClick={() => { void toggleFullscreen(); }} title={isImmersive ? "Keluar fullscreen" : "Masuk fullscreen"} className="p-2.5 rounded-2xl bg-background/88 backdrop-blur-sm border border-border hover:bg-secondary transition-colors active:scale-95 shadow-sm">
+        <button data-canvas-floating="true" onClick={() => { void toggleFullscreen(); }} title={isImmersive ? "Keluar fullscreen" : "Masuk fullscreen"} className={cn("p-2.5 hover:bg-secondary active:scale-95", floatingChromeClassName)}>
           {isImmersive ? <Minimize2 className="w-4 h-4 text-foreground" /> : <Maximize2 className="w-4 h-4 text-foreground" />}
         </button>
       </div>
 
       {/* Scale indicator */}
       <div
+        data-canvas-floating="true"
         className="absolute z-20 px-2.5 py-1 rounded-full bg-background/88 backdrop-blur-sm border border-border text-xs text-muted-foreground tabular-nums"
         style={{
           bottom: isImmersive ? "calc(env(safe-area-inset-bottom) + 12px)" : "12px",
           left: isImmersive ? "calc(env(safe-area-inset-left) + 12px)" : "12px",
+          backdropFilter: shouldLightenCanvasEffects ? "none" : undefined,
+          WebkitBackdropFilter: shouldLightenCanvasEffects ? "none" : undefined,
+          backgroundColor: shouldLightenCanvasEffects ? "hsl(var(--background) / 0.94)" : undefined,
         }}
       >
         {scalePercent}%
@@ -602,12 +626,14 @@ export function ZoomableCanvas({ children }: ZoomableCanvasProps) {
         <div
           ref={contentRef}
           className="absolute left-0 top-0 will-change-transform"
+          data-canvas-layer="content"
           style={{
             transformOrigin: "0 0",
             width: "max-content",
             minWidth: "100%",
             height: "max-content",
             minHeight: "100%",
+            contain: "layout paint style",
           }}
         >
           <div className="flex justify-center px-4 py-5 sm:px-6 sm:py-8">

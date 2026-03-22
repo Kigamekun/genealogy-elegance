@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { Calendar, Crown, Heart, Pencil, Trash2, UserPlus, UsersRound, X } from "lucide-react";
-import { FamilyMember, getParentIds, getSpouseIds, getSpouses } from "@/lib/family-data";
+import { FamilyMember, getParentIds, getSpouseIds, getSpouseRelationStatus, getSpouses, getStepParentIds } from "@/lib/family-data";
+import { formatFamilyDate, getMemberAge, isMemberDeceased } from "@/lib/member-life";
 import { cn } from "@/lib/utils";
 
 interface FamilyCanvasGraphProps {
@@ -67,6 +68,12 @@ interface SpouseConnector {
   x1: number;
   x2: number;
   y: number;
+  status: "married" | "divorced";
+}
+
+interface ChildTarget extends Point {
+  childId: string;
+  isStepChild: boolean;
 }
 
 interface ParentGroup {
@@ -75,7 +82,7 @@ interface ParentGroup {
   parentAnchors: Point[];
   source: Point;
   busY: number;
-  targets: Point[];
+  targets: ChildTarget[];
 }
 
 interface ConnectorGeometry {
@@ -84,7 +91,7 @@ interface ConnectorGeometry {
 }
 
 const CARD_WIDTH = 260;
-const CARD_HEIGHT = 122;
+const CARD_HEIGHT = 136;
 const SPOUSE_GAP = 82;
 const MULTI_WIFE_GAP = 420;
 const UNIT_GAP = 116;
@@ -96,17 +103,25 @@ const CORNER_RADIUS = 34;
 const PAIR_JOIN_OFFSET = 34;
 const PAIR_LANE_GAP = 24;
 const CHILD_CONNECTOR_OFFSET = 24;
+const ADOPTED_CHILD_STROKE = "hsl(28 92% 54% / 0.96)";
 
-function parseYear(dateString?: string): string {
-  if (!dateString) return "----";
-  const year = new Date(dateString).getFullYear();
-  return Number.isNaN(year) ? "----" : year.toString();
+function formatLifeRange(member: FamilyMember): string {
+  const birthDate = formatFamilyDate(member.birthDate);
+  const deathDate = member.deathDate ? formatFamilyDate(member.deathDate) : "";
+  return deathDate ? `${birthDate} - ${deathDate}` : birthDate;
 }
 
-function formatYearRange(member: FamilyMember): string {
-  const birthYear = parseYear(member.birthDate);
-  const deathYear = member.deathDate ? parseYear(member.deathDate) : "";
-  return deathYear ? `${birthYear} - ${deathYear}` : birthYear;
+function formatAgeLabel(member: FamilyMember): string {
+  const age = getMemberAge(member);
+  return age === null ? "Umur -" : `Umur ${age} tahun`;
+}
+
+function formatSpouseLabel(member: FamilyMember, spouses: FamilyMember[]): string {
+  return spouses.map((spouse) => (
+    getSpouseRelationStatus(member, spouse.id) === "divorced"
+      ? `${spouse.name} (cerai)`
+      : spouse.name
+  )).join(", ");
 }
 
 function average(values: number[]): number {
@@ -300,6 +315,26 @@ function buildParentGroupGeometry(group: ParentGroup): ConnectorGeometry {
   };
 }
 
+function buildHighlightedChildPaths(group: ParentGroup, target: ChildTarget): string[] {
+  if (group.targets.length === 0) return [];
+  if (group.targets.length === 1) return [makeOrthogonalPath(group.source, target)];
+
+  const sortedTargets = [...group.targets].sort((left, right) => left.x - right.x);
+  const minX = sortedTargets[0].x;
+  const maxX = sortedTargets[sortedTargets.length - 1].x;
+  const hubX = Math.max(minX, Math.min(maxX, average(sortedTargets.map((candidate) => candidate.x))));
+  const hubPoint = { x: hubX, y: group.busY };
+
+  return [
+    makeOrthogonalPath(group.source, hubPoint),
+    buildRoundedOrthogonalPath([
+      hubPoint,
+      { x: target.x, y: group.busY },
+      target,
+    ]),
+  ];
+}
+
 function getAnchors(position: NodePosition): Record<"top" | "bottom" | "left" | "right", Point> {
   return {
     top: { x: position.x + CARD_WIDTH / 2, y: position.y - 1 },
@@ -343,7 +378,7 @@ function ActionButton({
   );
 }
 
-export function FamilyCanvasGraph({
+function FamilyCanvasGraphComponent({
   members,
   selectedMemberId,
   onSelectMember,
@@ -770,6 +805,9 @@ export function FamilyCanvasGraph({
           x1: currentPosition.x + CARD_WIDTH + 16,
           x2: nextPosition.x - 16,
           y: unit.y + CARD_HEIGHT / 2,
+          status: unit.maleId
+            ? getSpouseRelationStatus(memberMap.get(unit.maleId)!, nextMemberId)
+            : getSpouseRelationStatus(memberMap.get(memberId)!, nextMemberId),
         });
       });
     });
@@ -828,17 +866,22 @@ export function FamilyCanvasGraph({
         const targets = Array.from(group.childIds)
           .map((childId) => {
             const position = shiftedPositions.get(childId);
+            const child = memberMap.get(childId);
             if (!position) return null;
+            if (!child) return null;
+            const sourceParentIdSet = new Set(group.parentIds);
 
             return {
+              childId,
               x: position.x + CARD_WIDTH / 2,
               y: position.y - CHILD_CONNECTOR_OFFSET,
+              isStepChild: getStepParentIds(members, child).some((stepParentId) => sourceParentIdSet.has(stepParentId)),
             };
           })
-          .filter((target): target is Point => Boolean(target))
+          .filter((target): target is ChildTarget => Boolean(target))
           .sort((left, right) => left.x - right.x)
           .filter((target, index, allTargets) =>
-            allTargets.findIndex((candidate) => candidate.x === target.x && candidate.y === target.y) === index,
+            allTargets.findIndex((candidate) => candidate.childId === target.childId) === index,
           );
 
         if (targets.length === 0) return null;
@@ -983,10 +1026,12 @@ export function FamilyCanvasGraph({
             y1={connector.y}
             x2={connector.x2}
             y2={connector.y}
-            stroke="hsl(var(--tree-line) / 0.7)"
+            stroke={connector.status === "divorced"
+              ? "hsl(var(--destructive) / 0.82)"
+              : "hsl(var(--tree-line) / 0.7)"}
             strokeWidth={2.1}
             strokeLinecap="round"
-            strokeDasharray="8 8"
+            strokeDasharray={connector.status === "divorced" ? "12 6" : "8 8"}
             vectorEffect="non-scaling-stroke"
           />
         ))}
@@ -1017,6 +1062,22 @@ export function FamilyCanvasGraph({
                   fill="hsl(var(--tree-line))"
                 />
               ))}
+              {group.targets.filter((target) => target.isStepChild).map((target) => (
+                <g key={`${group.id}-step-child-${target.childId}`}>
+                  {buildHighlightedChildPaths(group, target).map((path, pathIndex) => (
+                    <path
+                      key={`${group.id}-step-child-${target.childId}-path-${pathIndex}`}
+                      d={path}
+                      fill="none"
+                      stroke={ADOPTED_CHILD_STROKE}
+                      strokeWidth={2.8}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
+                </g>
+              ))}
             </g>
           );
         })}
@@ -1045,6 +1106,7 @@ export function FamilyCanvasGraph({
         const isConnectingSource = connectState?.sourceId === member.id;
         const isConnectingTarget = Boolean(connectState && connectState.sourceId !== member.id);
         const spouseButtonDisabled = member.gender === "female" && spouseIds.length > 0;
+        const isDeceased = isMemberDeceased(member);
 
         return (
           <div
@@ -1057,7 +1119,8 @@ export function FamilyCanvasGraph({
               data-pan-surface="true"
               onClick={() => handleMemberClick(member)}
               className={cn(
-                "glass-card group relative h-[122px] w-full overflow-hidden rounded-3xl border p-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg",
+                "glass-card group relative h-[136px] w-full overflow-hidden rounded-3xl border p-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg",
+                isDeceased && "border-slate-300/90 bg-slate-100/80 text-slate-800",
                 isSelected && "border-primary/70 ring-2 ring-primary/25",
                 isConnectingSource && "border-primary/70 ring-2 ring-primary/30",
                 isConnectingTarget && "hover:border-accent/70",
@@ -1066,7 +1129,9 @@ export function FamilyCanvasGraph({
               <span
                 className={cn(
                   "absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full border shadow-sm",
-                  member.gender === "male"
+                  isDeceased
+                    ? "border-slate-300 bg-slate-50 text-slate-500"
+                    : member.gender === "male"
                     ? "border-sky-200 bg-sky-50 text-sky-600"
                     : "border-pink-200 bg-pink-50 text-pink-600",
                 )}
@@ -1082,36 +1147,56 @@ export function FamilyCanvasGraph({
                     <img
                       src={member.avatarUrl}
                       alt={member.name}
-                      className="h-12 w-12 rounded-full object-cover ring-2 ring-border"
+                      className={cn(
+                        "h-12 w-12 rounded-full object-cover ring-2 ring-border",
+                        isDeceased && "grayscale-[0.35] opacity-90",
+                      )}
                     />
                   ) : (
                     <div className={cn(
                       "flex h-12 w-12 items-center justify-center rounded-full text-sm font-semibold",
-                      member.gender === "male" ? "bg-primary/15 text-primary" : "bg-accent/15 text-accent",
+                      isDeceased
+                        ? "bg-slate-200 text-slate-600"
+                        : member.gender === "male"
+                          ? "bg-primary/15 text-primary"
+                          : "bg-accent/15 text-accent",
                     )}>
                       {member.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}
                     </div>
                   )}
                   <div className="min-w-0 pr-10">
                     <p className="truncate text-lg font-semibold leading-tight text-foreground">{member.name}</p>
-                    {member.isFamilyHead && (
-                      <span className="mt-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-medium text-primary">
-                        <Crown className="h-2.5 w-2.5" />
-                        Kepala
-                      </span>
-                    )}
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                      {member.isFamilyHead && (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-medium text-primary">
+                          <Crown className="h-2.5 w-2.5" />
+                          Kepala
+                        </span>
+                      )}
+                      {isDeceased && (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-200 px-2 py-0.5 text-[9px] font-medium text-slate-700">
+                          Wafat
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-auto space-y-2">
-                  <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground sm:text-xs">
+                <div className="mt-auto space-y-1.5">
+                  <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground sm:text-xs" style={{justifyContent:'end'}}>
                     <Calendar className="h-3.5 w-3.5 shrink-0" />
-                    <span className="min-w-0 truncate tabular-nums">{formatYearRange(member)}</span>
+                    <span className="min-w-0 truncate tabular-nums">{formatLifeRange(member)}</span>
                   </div>
+                  <p className={cn(
+                    "text-[11px] font-medium",
+                    isDeceased ? "text-slate-700" : "text-foreground/85",
+                  )}>
+                    {formatAgeLabel(member)}
+                  </p>
 
                   {spouses.length > 0 && (
                     <p className="truncate text-[10px] text-muted-foreground">
-                      Pasangan: {spouses.map((spouse) => spouse.name).join(", ")}
+                      Pasangan: {formatSpouseLabel(member, spouses)}
                     </p>
                   )}
                 </div>
@@ -1190,3 +1275,5 @@ export function FamilyCanvasGraph({
     </div>
   );
 }
+
+export const FamilyCanvasGraph = memo(FamilyCanvasGraphComponent);

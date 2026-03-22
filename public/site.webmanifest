@@ -1,0 +1,17 @@
+{
+  "name": "safari-family",
+  "short_name": "safari-family",
+  "description": "Aplikasi silsilah keluarga interaktif dengan kanvas halus, foto anggota, dan sinkronisasi data lintas perangkat.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fbf7",
+  "theme_color": "#2d7a56",
+  "icons": [
+    {
+      "src": "/logo-safari.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

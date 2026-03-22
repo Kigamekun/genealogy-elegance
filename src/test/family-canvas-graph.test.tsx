@@ -17,8 +17,10 @@ function member(overrides: Partial<FamilyMember> & Pick<FamilyMember, "id" | "na
     avatarUrl: overrides.avatarUrl,
     parentId: overrides.parentId,
     parentIds: overrides.parentIds,
+    stepParentIds: overrides.stepParentIds,
     spouseId: overrides.spouseId,
     spouseIds: overrides.spouseIds,
+    spouseRelations: overrides.spouseRelations,
     isFamilyHead: overrides.isFamilyHead,
   };
 }
@@ -197,6 +199,56 @@ describe("FamilyCanvasGraph layout", () => {
     ], () => {
       expect(hasConnectorEndpoint(getCardCenterX("Budi Suryadi"), getCardTopY("Budi Suryadi"))).toBe(true);
       expect(hasConnectorEndpoint(getCardCenterX("Ratna Suryadi"), getCardTopY("Ratna Suryadi"))).toBe(true);
+    });
+  });
+
+  it("shows age for deceased members and colors divorced spouse lines red", () => {
+    withGraph([
+      member({
+        id: "ayah",
+        name: "Ayah",
+        gender: "male",
+        birthDate: "1970-01-01",
+        deathDate: "2020-01-01",
+        generation: 1,
+        spouseRelations: [{ spouseId: "ibu", status: "divorced" }],
+      }),
+      member({
+        id: "ibu",
+        name: "Ibu",
+        gender: "female",
+        birthDate: "1975-01-01",
+        generation: 1,
+        spouseRelations: [{ spouseId: "ayah", status: "divorced" }],
+      }),
+    ], () => {
+      expect(document.body.textContent).toContain("Umur 50 tahun");
+
+      const divorcedLine = Array.from(document.querySelectorAll("line")).find(
+        (line) => line.getAttribute("stroke") === "hsl(var(--destructive) / 0.82)",
+      );
+      expect(divorcedLine).not.toBeUndefined();
+    });
+  });
+
+  it("draws a red step-parent connector for stepchildren", () => {
+    withGraph([
+      member({ id: "ayah", name: "Ayah", gender: "male", birthDate: "1970-01-01", generation: 1, spouseIds: ["ibu"] }),
+      member({ id: "ibu", name: "Ibu", gender: "female", birthDate: "1975-01-01", generation: 1, spouseIds: ["ayah"] }),
+      member({
+        id: "anak",
+        name: "Anak Sambung",
+        gender: "male",
+        birthDate: "2008-01-01",
+        generation: 2,
+        parentIds: ["ayah", "ibu"],
+        stepParentIds: ["ayah"],
+      }),
+    ], () => {
+      const stepConnector = Array.from(document.querySelectorAll("path")).find(
+        (path) => path.getAttribute("stroke") === "hsl(28 92% 54% / 0.96)",
+      );
+      expect(stepConnector).not.toBeUndefined();
     });
   });
 });

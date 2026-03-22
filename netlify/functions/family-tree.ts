@@ -1,7 +1,7 @@
 import type { Config, Handler } from "@netlify/functions";
 import { connectLambda, getStore } from "@netlify/blobs";
 
-const STORE_NAME = "genealogy-elegance";
+const STORE_NAME = "safari-family";
 const ENTRY_KEY = "family-tree";
 
 interface StoredFamilyTree {

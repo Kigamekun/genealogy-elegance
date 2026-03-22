@@ -3,6 +3,8 @@ import {
   type FamilyMember,
   getFamilyChildren,
   getRootMembers,
+  getStepParentIds,
+  getSpouseRelationStatus,
   getSpouses,
   isStepChildForMember,
   syncMemberRelations,
@@ -18,7 +20,9 @@ function member(overrides: Partial<FamilyMember> & Pick<FamilyMember, "id" | "na
     description: overrides.description ?? "",
     generation: overrides.generation ?? 1,
     parentIds: overrides.parentIds,
+    stepParentIds: overrides.stepParentIds,
     spouseIds: overrides.spouseIds,
+    spouseRelations: overrides.spouseRelations,
     isFamilyHead: overrides.isFamilyHead,
   };
 }
@@ -50,6 +54,7 @@ describe("family-data relationships", () => {
     expect(fatherChildren).toEqual(["child-bio", "child-step"]);
     expect(isStepChildForMember(members, stepChild, "father")).toBe(true);
     expect(isStepChildForMember(members, bioChild, "father")).toBe(false);
+    expect(getStepParentIds(members, stepChild)).toEqual(["father"]);
   });
 
   it("returns family heads and independent roots", () => {
@@ -61,5 +66,27 @@ describe("family-data relationships", () => {
     ]);
 
     expect(getRootMembers(members).map((root) => root.id)).toEqual(["head-a", "head-b"]);
+  });
+
+  it("keeps divorced spouse status reciprocal after syncing", () => {
+    const members = syncMemberRelations([
+      member({
+        id: "husband",
+        name: "Suami",
+        spouseRelations: [{ spouseId: "wife", status: "divorced" }],
+      }),
+      member({
+        id: "wife",
+        name: "Istri",
+        gender: "female",
+        spouseIds: ["husband"],
+      }),
+    ]);
+
+    const husband = members.find((familyMember) => familyMember.id === "husband")!;
+    const wife = members.find((familyMember) => familyMember.id === "wife")!;
+
+    expect(getSpouseRelationStatus(husband, "wife")).toBe("divorced");
+    expect(getSpouseRelationStatus(wife, "husband")).toBe("divorced");
   });
 });

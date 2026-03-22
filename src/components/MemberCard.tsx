@@ -1,4 +1,5 @@
-import { FamilyMember } from "@/lib/family-data";
+import { FamilyMember, getSpouseRelationStatus } from "@/lib/family-data";
+import { formatFamilyDate, getMemberAge, isMemberDeceased } from "@/lib/member-life";
 import { Heart, Calendar, ChevronDown, ChevronRight, UserPlus } from "lucide-react";
 
 interface MemberCardProps {
@@ -12,19 +13,25 @@ interface MemberCardProps {
 }
 
 function Avatar({ member }: { member: FamilyMember }) {
+  const isDeceased = isMemberDeceased(member);
+
   if (member.avatarUrl) {
     return (
       <img
         src={member.avatarUrl}
         alt={member.name}
-        className="w-10 h-10 rounded-full object-cover shrink-0 ring-2 ring-border"
+        className={`w-10 h-10 rounded-full object-cover shrink-0 ring-2 ring-border ${isDeceased ? "grayscale-[0.35]" : ""}`}
       />
     );
   }
   return (
     <div
       className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${
-        member.gender === "male" ? "bg-primary/15 text-primary" : "bg-accent/15 text-accent"
+        isDeceased
+          ? "bg-slate-200 text-slate-600"
+          : member.gender === "male"
+            ? "bg-primary/15 text-primary"
+            : "bg-accent/15 text-accent"
       }`}
     >
       {member.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
@@ -33,11 +40,13 @@ function Avatar({ member }: { member: FamilyMember }) {
 }
 
 function MiniCard({ member, onClick }: { member: FamilyMember; onClick: () => void }) {
-  const isDeceased = !!member.deathDate;
+  const isDeceased = isMemberDeceased(member);
   return (
     <button
       onClick={onClick}
-      className="glass-card rounded-lg p-3 w-44 text-left transition-all duration-300 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+      className={`glass-card rounded-lg p-3 w-48 text-left transition-all duration-300 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] cursor-pointer ${
+        isDeceased ? "border-slate-300/80 bg-slate-100/75" : ""
+      }`}
     >
       <div className="flex items-center gap-2.5 mb-1.5">
         <Avatar member={member} />
@@ -53,9 +62,10 @@ function MiniCard({ member, onClick }: { member: FamilyMember; onClick: () => vo
       )}
       <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
         <Calendar className="w-2.5 h-2.5" />
-        <span>{new Date(member.birthDate).getFullYear()}</span>
-        {isDeceased && <><span>–</span><span>{new Date(member.deathDate!).getFullYear()}</span></>}
+        <span className="truncate">{formatFamilyDate(member.birthDate)}</span>
+        {isDeceased && <><span>–</span><span className="truncate">{formatFamilyDate(member.deathDate)}</span></>}
       </div>
+      <p className="mt-1 text-[10px] font-medium text-foreground/85">Umur {getMemberAge(member) ?? "-"} tahun</p>
     </button>
   );
 }
@@ -67,7 +77,9 @@ export function MemberCard({ member, spouses = [], hasChildren, isExpanded, onTo
         <MiniCard member={member} onClick={() => onClick(member)} />
         {spouses.map((spouse) => (
           <div key={spouse.id} className="flex items-center gap-2">
-            <Heart className="w-3.5 h-3.5 text-accent shrink-0" />
+            <Heart className={`w-3.5 h-3.5 shrink-0 ${
+              getSpouseRelationStatus(member, spouse.id) === "divorced" ? "text-destructive" : "text-accent"
+            }`} />
             <MiniCard member={spouse} onClick={() => onClick(spouse)} />
           </div>
         ))}
